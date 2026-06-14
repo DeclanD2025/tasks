@@ -15,7 +15,7 @@ import math
 from datetime import datetime
 
 from PySide6.QtCore import QPointF, Qt, QTimer
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from app.ui.components.hud import HudPanel, MetricCell, StatusPill
@@ -167,25 +167,26 @@ class _BiometricScan(QWidget):
         p.drawLine(QPointF(cx - radius, cy), QPointF(cx + radius, cy))
         p.drawLine(QPointF(cx, cy - radius), QPointF(cx, cy + radius))
 
-        # simple human silhouette (head + torso) as a glyph
-        sil = QColor(PALETTE.accent)
-        sil.setAlpha(120)
-        p.setPen(QPen(sil, 1.6))
-        p.setBrush(Qt.NoBrush)
-        head_r = radius * 0.13
-        p.drawEllipse(QPointF(cx, cy - radius * 0.42), head_r, head_r)
-        p.drawLine(QPointF(cx, cy - radius * 0.42 + head_r), QPointF(cx, cy + radius * 0.32))
-        p.drawLine(QPointF(cx, cy - radius * 0.18), QPointF(cx - radius * 0.26, cy + radius * 0.04))
-        p.drawLine(QPointF(cx, cy - radius * 0.18), QPointF(cx + radius * 0.26, cy + radius * 0.04))
-        p.drawLine(QPointF(cx, cy + radius * 0.32), QPointF(cx - radius * 0.18, cy + radius * 0.62))
-        p.drawLine(QPointF(cx, cy + radius * 0.32), QPointF(cx + radius * 0.18, cy + radius * 0.62))
+        self._paint_body_scan(p, cx, cy, radius)
 
-        # vital markers pinned around the body
-        markers = list(self._scores.items())
-        for i, (name, score) in enumerate(markers):
-            ma = -math.pi / 2 + 2 * math.pi * i / max(1, len(markers))
-            mx = cx + radius * 0.9 * math.cos(ma)
-            my = cy + radius * 0.9 * math.sin(ma)
+        # Vital markers pinned to anatomical regions with short readout leads.
+        marker_layout = {
+            "sleep": ((0.0, -0.54), (0.0, -0.74), Qt.AlignmentFlag.AlignCenter),
+            "hrv": ((0.19, -0.07), (0.54, -0.16), Qt.AlignmentFlag.AlignLeft),
+            "pulse": ((0.12, 0.02), (0.50, 0.22), Qt.AlignmentFlag.AlignLeft),
+            "strain": ((-0.12, 0.55), (-0.54, 0.62), Qt.AlignmentFlag.AlignRight),
+            "move": ((-0.32, 0.10), (-0.56, -0.02), Qt.AlignmentFlag.AlignRight),
+        }
+        lead = QColor(PALETTE.accent_dim)
+        lead.setAlpha(150)
+        p.setPen(QPen(lead, 1.0))
+        for name, score in self._scores.items():
+            target_pos, label_pos, align = marker_layout.get(
+                name, ((0.0, 0.0), (0.52, 0.0), Qt.AlignmentFlag.AlignLeft)
+            )
+            target = self._pt(cx, cy, radius, *target_pos)
+            label = self._pt(cx, cy, radius, *label_pos)
+            p.drawLine(target, label)
             col = (
                 PALETTE.positive
                 if score >= 0.66
@@ -193,13 +194,136 @@ class _BiometricScan(QWidget):
             )
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(col))
-            p.drawEllipse(QPointF(mx, my), 3, 3)
+            p.drawEllipse(target, 3.0, 3.0)
+            p.drawEllipse(label, 3.2, 3.2)
             p.setPen(QColor(PALETTE.text_dim))
             f = p.font()
             f.setPointSize(TYPE.nano)
             p.setFont(f)
-            p.drawText(QPointF(mx - 14, my - 6), name.upper())
+            label_width = 68
+            x = (
+                label.x() - label_width - 8
+                if align == Qt.AlignmentFlag.AlignRight
+                else label.x() + 8
+            )
+            if align == Qt.AlignmentFlag.AlignCenter:
+                x = label.x() - label_width / 2
+            p.drawText(int(x), int(label.y() - 8), label_width, 14, align, name.upper())
         p.end()
+
+    def _pt(self, cx: float, cy: float, radius: float, x: float, y: float) -> QPointF:
+        return QPointF(cx + radius * x, cy + radius * y)
+
+    def _path(self, cx: float, cy: float, radius: float, points: list[tuple[float, float]]):
+        path = QPainterPath(self._pt(cx, cy, radius, *points[0]))
+        for x, y in points[1:]:
+            path.lineTo(self._pt(cx, cy, radius, x, y))
+        path.closeSubpath()
+        return path
+
+    def _paint_body_scan(self, p: QPainter, cx: float, cy: float, radius: float) -> None:
+        fill = QColor(PALETTE.accent)
+        fill.setAlpha(18)
+        outline = QColor(PALETTE.accent)
+        outline.setAlpha(150)
+        inner = QColor(PALETTE.accent_dim)
+        inner.setAlpha(105)
+
+        p.setPen(QPen(outline, 1.5))
+        p.setBrush(fill)
+
+        # Head and neck.
+        head = self._pt(cx, cy, radius, 0.0, -0.44)
+        p.drawEllipse(head, radius * 0.12, radius * 0.14)
+        neck = self._path(
+            cx,
+            cy,
+            radius,
+            [(-0.055, -0.30), (0.055, -0.30), (0.075, -0.20), (-0.075, -0.20)],
+        )
+        p.drawPath(neck)
+
+        # Torso: broad shoulders, narrowed waist, hip bowl.
+        torso = QPainterPath(self._pt(cx, cy, radius, 0.0, -0.26))
+        torso.cubicTo(
+            self._pt(cx, cy, radius, -0.18, -0.25),
+            self._pt(cx, cy, radius, -0.28, -0.17),
+            self._pt(cx, cy, radius, -0.31, -0.05),
+        )
+        torso.cubicTo(
+            self._pt(cx, cy, radius, -0.28, 0.14),
+            self._pt(cx, cy, radius, -0.18, 0.28),
+            self._pt(cx, cy, radius, -0.16, 0.40),
+        )
+        torso.cubicTo(
+            self._pt(cx, cy, radius, -0.08, 0.47),
+            self._pt(cx, cy, radius, 0.08, 0.47),
+            self._pt(cx, cy, radius, 0.16, 0.40),
+        )
+        torso.cubicTo(
+            self._pt(cx, cy, radius, 0.18, 0.28),
+            self._pt(cx, cy, radius, 0.28, 0.14),
+            self._pt(cx, cy, radius, 0.31, -0.05),
+        )
+        torso.cubicTo(
+            self._pt(cx, cy, radius, 0.28, -0.17),
+            self._pt(cx, cy, radius, 0.18, -0.25),
+            self._pt(cx, cy, radius, 0.0, -0.26),
+        )
+        p.drawPath(torso)
+
+        limb_specs = [
+            [
+                (-0.30, -0.11),
+                (-0.43, 0.08),
+                (-0.37, 0.27),
+                (-0.26, 0.37),
+                (-0.20, 0.30),
+                (-0.27, 0.08),
+            ],
+            [(0.30, -0.11), (0.43, 0.08), (0.37, 0.27), (0.26, 0.37), (0.20, 0.30), (0.27, 0.08)],
+            [
+                (-0.13, 0.40),
+                (-0.22, 0.60),
+                (-0.17, 0.82),
+                (-0.27, 0.88),
+                (-0.04, 0.88),
+                (-0.03, 0.58),
+            ],
+            [(0.13, 0.40), (0.22, 0.60), (0.17, 0.82), (0.27, 0.88), (0.04, 0.88), (0.03, 0.58)],
+        ]
+        for spec in limb_specs:
+            p.drawPath(self._path(cx, cy, radius, spec))
+
+        # Interior scan details: spine, clavicle, rib arcs, joints.
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(inner, 1.1))
+        p.drawLine(self._pt(cx, cy, radius, 0.0, -0.27), self._pt(cx, cy, radius, 0.0, 0.43))
+        p.drawLine(self._pt(cx, cy, radius, -0.24, -0.11), self._pt(cx, cy, radius, 0.24, -0.11))
+        for y, width in [(-0.02, 0.18), (0.08, 0.21), (0.18, 0.18)]:
+            p.drawArc(
+                int(cx - radius * width),
+                int(cy + radius * y - radius * 0.055),
+                int(radius * width * 2),
+                int(radius * 0.11),
+                0,
+                180 * 16,
+            )
+
+        joint = QColor(PALETTE.accent)
+        joint.setAlpha(180)
+        p.setPen(QPen(joint, 1.0))
+        for x, y in [
+            (-0.29, -0.11),
+            (0.29, -0.11),
+            (-0.38, 0.22),
+            (0.38, 0.22),
+            (-0.15, 0.42),
+            (0.15, 0.42),
+            (-0.17, 0.62),
+            (0.17, 0.62),
+        ]:
+            p.drawRect(int(cx + radius * x - 3), int(cy + radius * y - 3), 6, 6)
 
 
 # --------------------------------------------------------------------------- #
