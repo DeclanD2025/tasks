@@ -24,6 +24,7 @@ from app.ui.screens.pages import (
     ModulePage,
     OverviewPage,
     SettingsPage,
+    StoicPage,
 )
 
 
@@ -65,6 +66,8 @@ class AppShell(QWidget):
         self._register("overview", self._overview)
         self._register("insights", InsightsPage(self._user_id))
         self._register("settings", SettingsPage())
+        self._stoic = StoicPage(self._user_id)
+        self._register("stoic", self._stoic)
         for item in NAV_ITEMS:
             if item.key in self._pages:
                 continue
@@ -93,6 +96,9 @@ class AppShell(QWidget):
         insights = self._pages.get("insights")
         if isinstance(insights, InsightsPage):
             insights.refresh()
+        if isinstance(self._pages.get("stoic"), StoicPage):
+            self._stoic._user_id = get_default_user_id()
+            self._stoic.refresh()
 
     def resizeEvent(self, event):  # noqa: N802
         self._bg.setGeometry(self.rect())

@@ -22,6 +22,13 @@ from PySide6.QtWidgets import (
 
 from app import services
 from app.domains.health.health_service import get_health_dashboard_snapshot
+from app.domains.stoic.stoic_service import get_stoic_snapshot
+from app.domains.stoic.stoic_widgets import (
+    ControlGauge,
+    EudaimoniaGauge,
+    LifeWeeksGrid,
+    MaximPlate,
+)
 from app.ui.components.charts import ChartPanel
 from app.ui.components.hud import HudPanel, MetricCell
 from app.ui.components.panels import (
@@ -466,6 +473,164 @@ class ModulePage(_ScrollPage):
             daily = pm.groupby("day")["momentum"].mean().sort_index()
             chart.line(daily.tolist(), color=PALETTE.accent)
         self.col.addWidget(chart)
+
+
+# --------------------------------------------------------------------------- #
+# Stoic page — the measured path to eudaimonia
+# --------------------------------------------------------------------------- #
+class StoicPage(_ScrollPage):
+    def __init__(self, user_id: int | None, parent=None):
+        super().__init__(parent)
+        self._user_id = user_id
+        self.refresh()
+
+    def refresh(self) -> None:
+        self.clear()
+        snap = get_stoic_snapshot(self._user_id)
+
+        self.col.addWidget(
+            SystemHeader(
+                snap.title,
+                _nav_code("stoic"),
+                subtitle=snap.subtitle,
+                sync_label=f"EUDAIMONIA {snap.eudaimonia_index:.0f}",
+                database_label="DISCIPLINE LOCAL",
+            )
+        )
+
+        # Row 1: eudaimonia gauge | four-virtues radar | equanimity trend
+        row1 = QWidget()
+        g1 = QGridLayout(row1)
+        g1.setContentsMargins(0, 0, 0, 0)
+        g1.setHorizontalSpacing(16)
+        g1.setVerticalSpacing(16)
+        g1.setColumnStretch(0, 3)
+        g1.setColumnStretch(1, 4)
+        g1.setColumnStretch(2, 3)
+
+        eud = HudPanel("Eudaimonia Index", "STO-EUD", status="LIVE")
+        eud.body.addWidget(EudaimoniaGauge(snap.eudaimonia_index))
+        eud.body.addWidget(
+            SignalLineChart(snap.eudaimonia_trend, color=PALETTE.accent, height=70)
+        )
+        g1.addWidget(eud, 0, 0)
+
+        virtues = HudPanel("Cardinal Virtues", "STO-VRT", status="ASSESSED")
+        virtues.body.addWidget(
+            RadarDial(
+                [v.name for v in snap.virtues],
+                [v.score / 100.0 for v in snap.virtues],
+                color=PALETTE.accent,
+            )
+        )
+        g1.addWidget(virtues, 0, 1)
+
+        equ = HudPanel("Equanimity · Ataraxia", "STO-EQU",
+                       status=f"{snap.equanimity * 100:.0f}%")
+        equ.body.addWidget(
+            SignalLineChart(
+                [v * 100 for v in snap.equanimity_trend], color=PALETTE.violet,
+                unit="%", height=150,
+            )
+        )
+        equ_note = QLabel("Physiological calm and low day-to-day volatility — the body's "
+                          "report on a settled mind.")
+        equ_note.setObjectName("Faint")
+        equ_note.setWordWrap(True)
+        equ.body.addWidget(equ_note)
+        g1.addWidget(equ, 0, 2)
+        self.col.addWidget(row1)
+
+        # Virtue cells strip (with one-line interpretations)
+        self.col.addWidget(
+            VitalsStrip(
+                "Virtue Breakdown",
+                "STO-VBD",
+                [
+                    (v.greek[:6].upper(),
+                     Metric(f"{v.name} ({v.greek})", f"{v.score:.0f}",
+                            trend="up" if v.score >= 55 else "down"))
+                    for v in snap.virtues
+                ],
+            )
+        )
+
+        # Row 2: dichotomy of control | daily practice
+        row2 = QWidget()
+        g2 = QGridLayout(row2)
+        g2.setContentsMargins(0, 0, 0, 0)
+        g2.setHorizontalSpacing(16)
+        g2.setColumnStretch(0, 1)
+        g2.setColumnStretch(1, 1)
+
+        ctrl = HudPanel("Dichotomy of Control", "STO-DOC",
+                        status="ALIGNED" if snap.control_ratio >= 0.5 else "DRIFT")
+        ctrl.body.addWidget(ControlGauge(snap.control_ratio))
+        ctrl_note = QLabel("Epictetus: spend yourself only on what is up to you — your "
+                           "judgements, your effort, your assent.")
+        ctrl_note.setObjectName("Faint")
+        ctrl_note.setWordWrap(True)
+        ctrl.body.addWidget(ctrl_note)
+        g2.addWidget(ctrl, 0, 0)
+
+        prac = HudPanel("Daily Practice", "STO-PRC",
+                        status=f"{snap.practice_consistency * 100:.0f}%")
+        for pr in snap.practices:
+            r = QWidget()
+            rl = QHBoxLayout(r)
+            rl.setContentsMargins(0, 0, 0, 0)
+            rl.setSpacing(8)
+            mark = QLabel("◧" if pr.done else "□")
+            mark.setStyleSheet(
+                f"color:{PALETTE.positive if pr.done else PALETTE.text_faint}; font-size:13px;"
+            )
+            mark.setFixedWidth(18)
+            name = QLabel(pr.label.upper())
+            name.setObjectName("PanelTitle")
+            code = QLabel(pr.code)
+            code.setObjectName("ModuleCode")
+            streak = QLabel(f"{pr.streak}d streak" if pr.done else "—")
+            streak.setObjectName("Mono")
+            rl.addWidget(mark)
+            rl.addWidget(name, 1)
+            rl.addWidget(code)
+            rl.addWidget(streak)
+            prac.body.addWidget(r)
+        g2.addWidget(prac, 0, 1)
+        self.col.addWidget(row2)
+
+        # Row 3: reflections feed | memento mori
+        row3 = QWidget()
+        g3 = QGridLayout(row3)
+        g3.setContentsMargins(0, 0, 0, 0)
+        g3.setHorizontalSpacing(16)
+        g3.setColumnStretch(0, 3)
+        g3.setColumnStretch(1, 2)
+
+        g3.addWidget(
+            _feed_panel("Reflections", "STO-REF", snap.reflections,
+                        status=f"{len(snap.reflections)} NOTES"),
+            0, 0,
+        )
+
+        memento = HudPanel("Memento Mori", "STO-MEM",
+                           status=f"WK {snap.life_weeks_lived}")
+        memento.body.addWidget(LifeWeeksGrid(snap.life_weeks_lived, snap.life_weeks_total))
+        remaining = max(0, snap.life_weeks_total - snap.life_weeks_lived)
+        mnote = QLabel(
+            f"{snap.life_weeks_lived:,} weeks lived · {remaining:,} on the reference horizon. "
+            "You could leave life right now — let that determine what you do."
+        )
+        mnote.setObjectName("Faint")
+        mnote.setWordWrap(True)
+        memento.body.addWidget(mnote)
+        g3.addWidget(memento, 0, 1)
+        self.col.addWidget(row3)
+
+        # Maxim of the day
+        maxim_panel = HudPanel("Maxim", "STO-MAX")
+        maxim_panel.body.addWidget(MaximPlate(snap.maxim, snap.maxim_author))
+        self.col.addWidget(maxim_panel)
 
 
 # --------------------------------------------------------------------------- #

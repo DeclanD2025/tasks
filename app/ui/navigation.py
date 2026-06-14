@@ -22,7 +22,8 @@ NAV_ITEMS: list[NavItem] = [
     NavItem("creative", "Creative", "✦", "CRV-04", "Writing and creative output"),
     NavItem("calendar", "Calendar", "▦", "CAL-05", "Schedule load and commitments"),
     NavItem("learning", "Learning", "❖", "LRN-06", "Study and skill acquisition"),
-    NavItem("projects", "Projects", "◈", "PRJ-07", "Momentum across initiatives"),
-    NavItem("insights", "Insights", "✺", "INS-08", "Deterministic findings"),
-    NavItem("settings", "Settings", "⚙", "SYS-09", "Sources, sync and security"),
+    NavItem("stoic", "Stoic", "☉", "STO-07", "The measured path to eudaimonia"),
+    NavItem("projects", "Projects", "◈", "PRJ-08", "Momentum across initiatives"),
+    NavItem("insights", "Insights", "✺", "INS-09", "Deterministic findings"),
+    NavItem("settings", "Settings", "⚙", "SYS-10", "Sources, sync and security"),
 ]
