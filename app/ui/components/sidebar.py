@@ -35,7 +35,6 @@ _STATUS = {
     "creative": ("idle", PALETTE.text_faint),
     "calendar": ("nominal", PALETTE.positive),
     "learning": ("idle", PALETTE.text_faint),
-    "football": ("nominal", PALETTE.positive),
     "projects": ("nominal", PALETTE.positive),
     "insights": ("active", PALETTE.accent),
     "settings": ("nominal", PALETTE.positive),

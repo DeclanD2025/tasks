@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from app import services
 from app.domains.health.health_service import get_health_dashboard_snapshot
-from app.ui.components.charts import ChartPanel, TimelinePanel
+from app.ui.components.charts import ChartPanel
 from app.ui.components.hud import HudPanel, MetricCell
 from app.ui.components.panels import (
     BiometricScanPanel,
@@ -204,12 +204,9 @@ class OverviewPage(_ScrollPage):
             )
             creative = 0.55
             projects = min(1.0, (pm["momentum"].mean() or 0) / 100) if not pm.empty else 0.5
-            training = (
-                min(1.0, (af["training_load"].tail(7).mean() or 0) / 100) if not af.empty else 0.5
-            )
-            return [finance, health, focus, creative, projects, training]
+            return [finance, health, focus, creative, projects]
         except Exception:
-            return [0.6] * 6
+            return [0.6] * 5
 
     def _domain_nodes(self) -> list[DomainNode]:
         balance = self._system_balance()
@@ -219,7 +216,6 @@ class OverviewPage(_ScrollPage):
             "productivity": balance[2],
             "creative": balance[3],
             "projects": balance[4],
-            "football": balance[5],
             "calendar": 0.52,
             "learning": 0.48,
         }
@@ -470,25 +466,6 @@ class ModulePage(_ScrollPage):
             daily = pm.groupby("day")["momentum"].mean().sort_index()
             chart.line(daily.tolist(), color=PALETTE.accent)
         self.col.addWidget(chart)
-
-    def _build_football(self) -> None:
-        self.add_metric_strip(
-            [
-                Metric("Form (last 6)", "W W D L W D"),
-                Metric("Goals For", "12"),
-                Metric("Goals Against", "7"),
-            ]
-        )
-        self.col.addWidget(
-            TimelinePanel(
-                "Recent Fixtures",
-                [
-                    ("Sat 07 Jun", "Win 3–1 — strong second half"),
-                    ("Wed 04 Jun", "Draw 1–1 — late equaliser conceded"),
-                    ("Sat 31 May", "Win 2–0 — clean sheet"),
-                ],
-            )
-        )
 
 
 # --------------------------------------------------------------------------- #

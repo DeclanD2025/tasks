@@ -143,6 +143,8 @@ class BiometricPanel(BiometricScanPanel):
 
 
 class _BiometricScanCanvas(QWidget):
+    _LEADER_KEYS = {"sleep", "hrv", "vo2", "training_load"}
+
     def __init__(self, snapshot: HealthDashboardSnapshot, parent=None):
         super().__init__(parent)
         self._snapshot = snapshot
@@ -168,7 +170,6 @@ class _BiometricScanCanvas(QWidget):
         anchors = self._body_anchors(layout["figure"])
         self._paint_model(p, layout["figure"])
         self._paint_metric_cards(p, layout["metric_slots"], anchors)
-        self._paint_live_feed(p, layout["live_feed"])
         self._paint_scan_status(p, layout["scan_status"])
         self._paint_system_rail(p, layout["rail"])
         p.end()
@@ -187,11 +188,11 @@ class _BiometricScanCanvas(QWidget):
         stage_right = right_x - gap
         stage = QRectF(stage_left, 16.0, max(240.0, stage_right - stage_left), h - 32.0)
         cx = stage.center().x()
-        figure_h = min(h * 0.88, stage.width() * 1.88)
+        figure_h = min(h * 0.93, stage.width() * 2.08)
         figure_w = figure_h * self._image_aspect()
-        figure = QRectF(cx - figure_w / 2.0, h * 0.028, figure_w, figure_h)
-        if figure.bottom() > h * 0.91:
-            figure.moveBottom(h * 0.91)
+        figure = QRectF(cx - figure_w / 2.0, h * 0.0, figure_w, figure_h)
+        if figure.bottom() > h * 0.95:
+            figure.moveBottom(h * 0.95)
 
         left_cards = [c for c in self._snapshot.metric_cards if c.side == "left"]
         right_cards = [c for c in self._snapshot.metric_cards if c.side == "right"]
@@ -206,8 +207,7 @@ class _BiometricScanCanvas(QWidget):
             "stage": stage,
             "figure": figure,
             "metric_slots": slots,
-            "live_feed": QRectF(left_x, h - 130.0, card_w, 108.0),
-            "scan_status": QRectF(stage.center().x() - 190.0, h - 92.0, 380.0, 58.0),
+            "scan_status": QRectF(stage.center().x() - 180.0, h - 64.0, 360.0, 46.0),
         }
 
     def _image_aspect(self) -> float:
@@ -216,25 +216,25 @@ class _BiometricScanCanvas(QWidget):
         return self._pixmap.width() / max(1, self._pixmap.height())
 
     def _paint_scan_field(self, p: QPainter, w: int, h: int, stage: QRectF, figure: QRectF) -> None:
-        grid = self._color(PALETTE.grid, 145)
+        grid = self._color(PALETTE.grid, 84)
         p.setPen(QPen(grid, 1.0))
         x = 0.0
         while x < w:
-            alpha = 170 if abs(x - stage.center().x()) < 2 else 95
+            alpha = 95 if abs(x - stage.center().x()) < 2 else 52
             p.setPen(QPen(self._color(PALETTE.grid, alpha), 1.0))
             p.drawLine(QPointF(x, 0), QPointF(x, h))
-            x += 36
+            x += 48
         y = 0.0
         while y < h:
-            p.setPen(QPen(self._color(PALETTE.grid, 108), 1.0))
+            p.setPen(QPen(self._color(PALETTE.grid, 54), 1.0))
             p.drawLine(QPointF(0, y), QPointF(w, y))
-            y += 36
+            y += 48
 
         cx = figure.center().x()
         cy = figure.center().y() + figure.height() * 0.02
-        for i, factor in enumerate((0.34, 0.48, 0.62)):
+        for i, factor in enumerate((0.44, 0.63)):
             radius = figure.height() * factor
-            alpha = 56 + i * 14
+            alpha = 36 + i * 18
             p.setPen(QPen(self._color(PALETTE.accent_dim, alpha), 1.0))
             p.drawEllipse(QPointF(cx, cy), radius * 0.46, radius * 0.46)
 
@@ -246,11 +246,9 @@ class _BiometricScanCanvas(QWidget):
             QPointF(cx + math.cos(sweep) * ring_r, cy + math.sin(sweep) * ring_r),
         )
 
-        base = QPointF(cx, figure.bottom() + 12)
-        for i, r in enumerate(
-            (figure.width() * 0.55, figure.width() * 0.78, figure.width() * 1.05)
-        ):
-            alpha = 125 - i * 34
+        base = QPointF(cx, figure.bottom() + 8)
+        for i, r in enumerate((figure.width() * 0.62, figure.width() * 0.96)):
+            alpha = 80 - i * 24
             p.setPen(QPen(self._color(PALETTE.accent, alpha), 1.0))
             p.drawEllipse(base, r, r * 0.15)
         pulse = 1.0 + math.sin(self._t * 1.4) * 0.035
@@ -260,9 +258,9 @@ class _BiometricScanCanvas(QWidget):
         scan_y = figure.top() + (0.5 + 0.5 * math.sin(self._t * 0.82)) * figure.height()
         p.fillRect(
             QRectF(stage.left() + 10, scan_y - 7, stage.width() - 20, 14),
-            self._color(PALETTE.accent, 22),
+            self._color(PALETTE.accent, 12),
         )
-        p.setPen(QPen(self._color(PALETTE.accent, 92), 1.0))
+        p.setPen(QPen(self._color(PALETTE.accent, 58), 1.0))
         p.drawLine(QPointF(stage.left() + 18, scan_y), QPointF(stage.right() - 18, scan_y))
 
     def _paint_model(self, p: QPainter, figure: QRectF) -> None:
@@ -299,23 +297,24 @@ class _BiometricScanCanvas(QWidget):
     ) -> None:
         for card, rect in slots:
             anchor = anchors.get(card.target_region, anchors["core"])
-            edge_x = rect.right() if card.side == "left" else rect.left()
-            start = QPointF(edge_x, rect.center().y())
-            elbow = QPointF(start.x() + (30 if card.side == "left" else -30), start.y())
-            pre_anchor = QPointF(anchor.x() + (-66 if card.side == "left" else 66), anchor.y())
-            p.setPen(QPen(self._color(PALETTE.accent, 150), 1.05))
-            p.drawLine(start, elbow)
-            p.drawLine(elbow, pre_anchor)
-            p.drawLine(pre_anchor, anchor)
-            p.setBrush(self._color(PALETTE.accent, 190))
-            p.setPen(Qt.NoPen)
-            p.drawEllipse(anchor, 3.0, 3.0)
-            p.drawRect(QRectF(start.x() - 2.0, start.y() - 2.0, 4.0, 4.0))
+            if card.key in self._LEADER_KEYS:
+                edge_x = rect.right() if card.side == "left" else rect.left()
+                start = QPointF(edge_x, rect.center().y())
+                elbow = QPointF(start.x() + (24 if card.side == "left" else -24), start.y())
+                pre_anchor = QPointF(anchor.x() + (-54 if card.side == "left" else 54), anchor.y())
+                p.setPen(QPen(self._color(PALETTE.accent, 128), 1.0))
+                p.drawLine(start, elbow)
+                p.drawLine(elbow, pre_anchor)
+                p.drawLine(pre_anchor, anchor)
+                p.setBrush(self._color(PALETTE.accent, 190))
+                p.setPen(Qt.NoPen)
+                p.drawEllipse(anchor, 3.0, 3.0)
+                p.drawRect(QRectF(start.x() - 2.0, start.y() - 2.0, 4.0, 4.0))
             self._draw_metric_card(p, card, rect)
 
     def _draw_metric_card(self, p: QPainter, card: HealthMetricCard, rect: QRectF) -> None:
         accent = PALETTE.orange if card.warning else PALETTE.accent
-        self._draw_panel_rect(p, rect, accent=accent, fill_alpha=188)
+        self._draw_panel_rect(p, rect, accent=accent, fill_alpha=154)
         self._set_font(p, TYPE.small, mono=True, bold=True)
         p.setPen(self._color(PALETTE.text, 226))
         p.drawText(
@@ -384,43 +383,20 @@ class _BiometricScanCanvas(QWidget):
         }
         return details.get(card.key, "CURRENT")
 
-    def _paint_live_feed(self, p: QPainter, rect: QRectF) -> None:
-        self._draw_panel_rect(p, rect, accent=PALETTE.border, fill_alpha=142)
-        self._set_font(p, TYPE.nano, mono=True, bold=True)
-        p.setPen(self._color(PALETTE.text, 220))
-        p.drawText(QRectF(rect.left() + 13, rect.top() + 10, rect.width() - 26, 14), "LIVE FEED")
-        p.setPen(self._color(PALETTE.text_faint, 200))
-        p.drawText(
-            QRectF(rect.left() + 13, rect.top() + 26, rect.width() - 26, 14),
-            "REAL-TIME BIOMETRIC STREAM",
-        )
-        self._draw_sparkline(
-            p,
-            self._snapshot.live_feed,
-            QRectF(rect.left() + 12, rect.top() + 48, rect.width() - 24, rect.height() - 62),
-            PALETTE.accent,
-            filled=True,
-        )
-        p.setBrush(
-            self._color(PALETTE.accent, 160 + int(60 * (0.5 + 0.5 * math.sin(self._t * 2.0))))
-        )
-        p.setPen(Qt.NoPen)
-        p.drawEllipse(QPointF(rect.right() - 28, rect.top() + 18), 3.0, 3.0)
-
     def _paint_scan_status(self, p: QPainter, rect: QRectF) -> None:
         self._draw_panel_rect(p, rect, accent=PALETTE.border, fill_alpha=150)
         self._set_font(p, TYPE.nano, mono=True, bold=True)
         p.setPen(self._color(PALETTE.accent, 230))
         p.drawText(
-            QRectF(rect.left() + 16, rect.top() + 14, rect.width() - 32, 14),
+            QRectF(rect.left() + 14, rect.top() + 10, rect.width() - 28, 14),
             "BIOMETRIC SCAN ACTIVE",
         )
         p.setPen(self._color(PALETTE.text_faint, 210))
         p.drawText(
-            QRectF(rect.left() + 16, rect.top() + 30, rect.width() - 32, 14),
+            QRectF(rect.left() + 14, rect.top() + 25, rect.width() - 28, 14),
             f"BODY BATTERY {self._snapshot.body_battery_value} / {self._snapshot.body_battery_status.upper()}",
         )
-        bar = QRectF(rect.left() + 16, rect.bottom() - 12, rect.width() - 32, 4)
+        bar = QRectF(rect.left() + 14, rect.bottom() - 9, rect.width() - 28, 3)
         p.fillRect(bar, self._color(PALETTE.border, 180))
         p.fillRect(
             QRectF(bar.left(), bar.top(), bar.width() * 0.72, bar.height()),
@@ -430,59 +406,28 @@ class _BiometricScanCanvas(QWidget):
             self._color(PALETTE.accent, 185 + int(50 * (0.5 + 0.5 * math.sin(self._t * 2.2))))
         )
         p.setPen(Qt.NoPen)
-        p.drawEllipse(QPointF(rect.right() - 52, rect.top() + 20), 3.0, 3.0)
+        p.drawEllipse(QPointF(rect.right() - 50, rect.top() + 16), 3.0, 3.0)
         p.setPen(self._color(PALETTE.text_dim, 210))
-        p.drawText(QRectF(rect.right() - 45, rect.top() + 13, 36, 14), "LIVE")
+        p.drawText(QRectF(rect.right() - 43, rect.top() + 9, 36, 14), "LIVE")
 
     def _paint_system_rail(self, p: QPainter, rail: QRectF) -> None:
         gap = 10.0
-        available = rail.height() - gap * 4.0
+        available = rail.height() - gap * 3.0
         heights = [
-            available * 0.27,
-            available * 0.31,
-            available * 0.13,
-            available * 0.14,
-            available * 0.15,
+            available * 0.43,
+            available * 0.19,
+            available * 0.19,
+            available * 0.19,
         ]
         y = rail.top()
         rects: list[QRectF] = []
         for height in heights:
             rects.append(QRectF(rail.left(), y, rail.width(), height))
             y += height + gap
-        self._paint_radar_panel(p, rects[0])
-        self._paint_bio_bars(p, rects[1], self._snapshot.bio_systems)
-        self._paint_anomaly_panel(p, rects[2])
-        self._paint_last_sync(p, rects[3])
-        self._paint_data_source(p, rects[4])
-
-    def _paint_radar_panel(self, p: QPainter, rect: QRectF) -> None:
-        self._draw_panel_rect(p, rect, accent=PALETTE.border, fill_alpha=160)
-        self._rail_title(p, rect, "SYSTEM OVERVIEW")
-        center = QPointF(rect.center().x(), rect.top() + rect.height() * 0.55)
-        radius = min(rect.width(), rect.height()) * 0.34
-        p.setPen(QPen(self._color(PALETTE.border, 160), 1.0))
-        for factor in (0.34, 0.55, 0.76, 1.0):
-            p.drawEllipse(center, radius * factor, radius * factor)
-        p.drawLine(
-            QPointF(center.x() - radius, center.y()), QPointF(center.x() + radius, center.y())
-        )
-        p.drawLine(
-            QPointF(center.x(), center.y() - radius), QPointF(center.x(), center.y() + radius)
-        )
-        angle = self._t * 0.18
-        p.setPen(QPen(self._color(PALETTE.accent, 145), 1.2))
-        p.drawLine(
-            center,
-            QPointF(center.x() + math.cos(angle) * radius, center.y() + math.sin(angle) * radius),
-        )
-        p.setPen(Qt.NoPen)
-        for i in range(90):
-            a = i * 2.399 + self._t * 0.03
-            rr = radius * (0.16 + ((i * 37) % 83) / 100)
-            x = center.x() + math.cos(a) * rr
-            y = center.y() + math.sin(a) * rr
-            p.setBrush(self._color(PALETTE.accent, 45 + (i % 5) * 24))
-            p.drawEllipse(QPointF(x, y), 1.2, 1.2)
+        self._paint_bio_bars(p, rects[0], self._snapshot.bio_systems)
+        self._paint_anomaly_panel(p, rects[1])
+        self._paint_last_sync(p, rects[2])
+        self._paint_data_source(p, rects[3])
 
     def _paint_bio_bars(self, p: QPainter, rect: QRectF, bars: tuple[BioSystemBar, ...]) -> None:
         self._draw_panel_rect(p, rect, accent=PALETTE.border, fill_alpha=160)

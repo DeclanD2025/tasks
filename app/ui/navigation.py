@@ -9,8 +9,8 @@ from dataclasses import dataclass
 class NavItem:
     key: str
     label: str
-    icon: str    # a glyph used as a lightweight icon (no asset dependency)
-    code: str    # technical module ID, e.g. "FIN-01"
+    icon: str  # a glyph used as a lightweight icon (no asset dependency)
+    code: str  # technical module ID, e.g. "FIN-01"
     subtitle: str
 
 
@@ -22,8 +22,7 @@ NAV_ITEMS: list[NavItem] = [
     NavItem("creative", "Creative", "✦", "CRV-04", "Writing and creative output"),
     NavItem("calendar", "Calendar", "▦", "CAL-05", "Schedule load and commitments"),
     NavItem("learning", "Learning", "❖", "LRN-06", "Study and skill acquisition"),
-    NavItem("football", "Football", "⚽", "FBL-07", "Matches, form and training"),
-    NavItem("projects", "Projects", "◈", "PRJ-08", "Momentum across initiatives"),
-    NavItem("insights", "Insights", "✺", "INS-09", "Deterministic findings"),
-    NavItem("settings", "Settings", "⚙", "SYS-10", "Sources, sync and security"),
+    NavItem("projects", "Projects", "◈", "PRJ-07", "Momentum across initiatives"),
+    NavItem("insights", "Insights", "✺", "INS-08", "Deterministic findings"),
+    NavItem("settings", "Settings", "⚙", "SYS-09", "Sources, sync and security"),
 ]

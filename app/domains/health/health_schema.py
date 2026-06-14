@@ -48,4 +48,3 @@ class HealthDashboardSnapshot:
     body_battery_status: str
     metric_cards: tuple[HealthMetricCard, ...]
     bio_systems: tuple[BioSystemBar, ...]
-    live_feed: tuple[float, ...]

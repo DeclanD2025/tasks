@@ -135,7 +135,6 @@ _DEFAULT_LINKS = [
     ("creative", "learning"),
     ("finance", "projects"),
     ("calendar", "productivity"),
-    ("football", "health"),
     ("learning", "finance"),
     ("health", "calendar"),
 ]

@@ -93,14 +93,6 @@ class MockHealthRepository:
         recovery = _scaled_series(hrv, 81.0, 5.8)
         vo2 = _scaled_series(active, 42.2, 2.2)
         readiness = _scaled_series(recovery, 81.0, 4.8)
-        live = tuple(
-            0.48
-            + math.sin(i * 1.7) * 0.15
-            + math.sin(i * 0.39) * 0.08
-            + (0.12 if i % 13 == 0 else 0.0)
-            for i in range(96)
-        )
-
         cards = (
             HealthMetricCard(
                 "sleep",
@@ -193,7 +185,7 @@ class MockHealthRepository:
         last_sync = now.replace(second=max(0, now.second - 26), microsecond=0)
         return HealthDashboardSnapshot(
             title="Health Telemetry",
-            subtitle="Biometric Scan  •  Live Feed",
+            subtitle="Biometric Scan  •  Clinical Telemetry",
             scan_status="LIVE",
             sync_status="ONLINE",
             database_status="DB LOCAL",
@@ -214,5 +206,4 @@ class MockHealthRepository:
                 BioSystemBar("Hormonal", 71),
                 BioSystemBar("Immune", 78),
             ),
-            live_feed=live,
         )
