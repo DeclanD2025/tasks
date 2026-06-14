@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import sys
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
 
-from app.core.config import get_settings
+from app.core.config import asset_path, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.db.database import init_db
 from app.db.seed import seed
@@ -69,6 +70,9 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("ORION")
+    icon_file = asset_path("ui", "assets", "orion.icns")
+    if icon_file.exists():
+        app.setWindowIcon(QIcon(str(icon_file)))
     app.setStyleSheet(build_stylesheet())
 
     scheduler = JobScheduler()

@@ -14,32 +14,33 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Palette:
-    # Backgrounds — near-black navy command centre.
-    bg_void: str = "#05070d"          # window base
-    bg_deep: str = "#080b14"          # panels base
-    bg_panel: str = "#0c1120"         # glass panel fill
-    bg_panel_alt: str = "#0f1626"     # raised card
-    bg_elevated: str = "#121b2e"
+    # Backgrounds — near-black with a deep violet/indigo undertone (matches the
+    # ORION icon). Darker and moodier than before.
+    bg_void: str = "#04030a"          # window base — almost black
+    bg_deep: str = "#070512"          # panels base
+    bg_panel: str = "#0a0818"         # glass panel fill
+    bg_panel_alt: str = "#0e0b20"     # raised card
+    bg_elevated: str = "#140f2b"
 
-    # Borders / grid — thin, cool.
-    border: str = "#1b2740"
-    border_soft: str = "#16203a"
-    grid: str = "#0e1626"
+    # Borders / grid — thin, cool violet.
+    border: str = "#241a3f"
+    border_soft: str = "#19122e"
+    grid: str = "#0c0a1a"
 
     # Text.
-    text: str = "#e6edf7"
-    text_dim: str = "#9fb0c9"
-    text_faint: str = "#5d6f8c"
+    text: str = "#ece8fb"
+    text_dim: str = "#9b93c4"
+    text_faint: str = "#5a527e"
 
-    # Soft neon accents.
-    accent: str = "#34d6ff"           # ORION cyan
-    accent_2: str = "#6c8cff"         # constellation blue
-    accent_3: str = "#b388ff"         # violet
+    # Soft neon accents — violet primary (icon), cyan + coral secondaries.
+    accent: str = "#a26bff"           # ORION violet (primary)
+    accent_2: str = "#3fd2ff"         # cyber cyan
+    accent_3: str = "#ff6b8a"         # coral (from the icon's red nodes)
     positive: str = "#3ad6a0"
     warning: str = "#ffb454"
     critical: str = "#ff5d7a"
 
-    star: str = "#cfe3ff"
+    star: str = "#d9d2ff"
 
 
 @dataclass(frozen=True)
@@ -143,14 +144,14 @@ def build_stylesheet() -> str:
 
     QPushButton#PrimaryButton {{
         background-color: {p.accent};
-        color: #04121b;
-        border: none;
+        color: #0a0414;
+        border: 1px solid {p.accent_3};
         border-radius: 9px;
-        padding: 11px 18px;
+        padding: 12px 18px;
         font-weight: 700;
-        letter-spacing: 1px;
+        letter-spacing: 2px;
     }}
-    QPushButton#PrimaryButton:hover {{ background-color: #5ee0ff; }}
+    QPushButton#PrimaryButton:hover {{ background-color: #b888ff; border-color: {p.accent}; }}
     QPushButton#GhostButton {{
         background-color: {p.bg_panel_alt};
         border: 1px solid {p.border};

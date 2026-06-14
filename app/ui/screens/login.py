@@ -55,11 +55,7 @@ class LoginScreen(QWidget):
         lay.setAlignment(Qt.AlignTop)
 
         lay.addWidget(OrionLogo(big=True, tagline=True))
-
-        prompt = QLabel("Authenticate to enter the command centre.")
-        prompt.setObjectName("Faint")
-        prompt.setWordWrap(True)
-        lay.addWidget(prompt)
+        lay.addSpacing(6)
 
         self._email = QLineEdit()
         self._email.setPlaceholderText("operator@orion.local")

@@ -75,3 +75,17 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return a cached Settings instance."""
     return Settings()
+
+
+def asset_path(*parts: str) -> Path:
+    """Resolve a bundled asset path, working both from source and when frozen.
+
+    PyInstaller unpacks bundled data under ``sys._MEIPASS``; from source we use
+    the package directory.
+    """
+    import sys
+
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        return Path(base) / "app" / Path(*parts)
+    return Path(__file__).resolve().parent.parent / Path(*parts)
