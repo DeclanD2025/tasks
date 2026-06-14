@@ -423,101 +423,44 @@ class ModulePage(_ScrollPage):
         sleep_series = (hf["sleep_minutes"] / 60).dropna().tolist() if not hf.empty else []
         hrv_series = hf["hrv_ms"].dropna().tolist() if not hf.empty else []
         rhr_series = hf["resting_hr"].dropna().tolist() if not hf.empty else []
+        weight_series = hf["weight_kg"].dropna().tolist() if not hf.empty else []
         load_series = af["training_load"].dropna().tolist() if not af.empty else []
-        steps_series = af["steps"].dropna().tolist() if not af.empty else []
+        active_series = af["active_minutes"].dropna().tolist() if not af.empty else []
 
         sleep = sum(sleep_series[-7:]) / min(len(sleep_series), 7) if sleep_series else 0.0
         hrv = sum(hrv_series[-7:]) / min(len(hrv_series), 7) if hrv_series else 0.0
         rhr = sum(rhr_series[-7:]) / min(len(rhr_series), 7) if rhr_series else 0.0
+        weight = weight_series[-1] if weight_series else 0.0
         load = sum(load_series[-7:]) / min(len(load_series), 7) if load_series else 0.0
-        steps = sum(steps_series[-7:]) / min(len(steps_series), 7) if steps_series else 0.0
+        active = sum(active_series[-7:]) / min(len(active_series), 7) if active_series else 0.0
 
-        scores = {
-            "sleep": _clamp(sleep / 8.0),
-            "hrv": _clamp(hrv / 80.0),
-            "pulse": _clamp(1.0 - ((rhr or 62.0) - 48.0) / 34.0),
-            "strain": _clamp(load / 90.0),
-            "move": _clamp(steps / 10_000.0),
-        }
-        health_insights = [
-            insight
-            for insight in services.latest_insights(uid, limit=8)
-            if insight["domain"] == "health"
-        ][:4]
+        sleep_score = _clamp(sleep / 8.0)
+        hrv_score = _clamp(hrv / 80.0)
+        rhr_score = _clamp(1.0 - ((rhr or 62.0) - 48.0) / 34.0)
+        load_score = _clamp(1.0 - max(0.0, load - 65.0) / 55.0)
+        recovery_score = _clamp(
+            sleep_score * 0.34 + hrv_score * 0.30 + rhr_score * 0.22 + load_score * 0.14
+        )
+        vo2 = 34.0 + hrv * 0.12 + active * 0.035 - max(0.0, rhr - 52.0) * 0.18
+        vo2_score = _clamp((vo2 - 32.0) / 24.0)
+        weight_score = _clamp(1.0 - abs((weight or 79.0) - 79.0) / 8.0)
+
+        telemetry = [
+            {"label": "Sleep", "value": f"{sleep:.1f}h", "score": sleep_score},
+            {"label": "HRV", "value": f"{hrv:.0f} ms", "score": hrv_score},
+            {"label": "Recovery", "value": f"{recovery_score * 100:.0f}%", "score": recovery_score},
+            {"label": "RHR", "value": f"{rhr:.0f} bpm", "score": rhr_score},
+            {
+                "label": "Weight",
+                "value": f"{weight:.1f} kg" if weight else "—",
+                "score": weight_score,
+            },
+            {"label": "VO2", "value": f"{vo2:.1f}", "score": vo2_score},
+            {"label": "Training Load", "value": f"{load:.0f}", "score": load_score},
+        ]
 
         self.col.addWidget(SystemHeader("Health Telemetry", _nav_code("health")))
-        self.col.addWidget(
-            VitalsStrip(
-                "Vitals Strip",
-                "HLT-VTL",
-                [
-                    (
-                        "HLT-SLP",
-                        Metric("Sleep 7D", f"{sleep:.1f}h", trend="flat", series=sleep_series),
-                    ),
-                    ("HLT-HRV", Metric("HRV 7D", f"{hrv:.0f} ms", trend="flat", series=hrv_series)),
-                    (
-                        "HLT-RHR",
-                        Metric("Resting HR", f"{rhr:.0f} bpm", trend="flat", series=rhr_series),
-                    ),
-                    (
-                        "HLT-LOD",
-                        Metric("Training Load", f"{load:.0f}", trend="flat", series=load_series),
-                    ),
-                ],
-            )
-        )
-
-        grid_host = QWidget()
-        grid = QGridLayout(grid_host)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(16)
-        grid.setVerticalSpacing(16)
-        grid.setColumnStretch(0, 5)
-        grid.setColumnStretch(1, 3)
-
-        grid.addWidget(BiometricPanel(scores), 0, 0, 2, 1)
-
-        recovery = HudPanel("Recovery Vector", "HLT-RCV", status="STABLE")
-        recovery.body.addWidget(
-            RadarDial(
-                ["Sleep", "HRV", "Pulse", "Load", "Move"],
-                [
-                    scores["sleep"],
-                    scores["hrv"],
-                    scores["pulse"],
-                    1 - scores["strain"],
-                    scores["move"],
-                ],
-                color=PALETTE.positive,
-            )
-        )
-        grid.addWidget(recovery, 0, 1)
-
-        grid.addWidget(
-            _feed_panel(
-                "Anomaly Queue",
-                "HLT-ANM",
-                health_insights,
-                status=f"{len(health_insights)} FLAGS",
-            ),
-            1,
-            1,
-        )
-        self.col.addWidget(grid_host)
-
-        self.col.addWidget(
-            ZoneDistribution(
-                "Recovery Zones",
-                "HLT-ZNE",
-                [
-                    ("sleep", scores["sleep"], PALETTE.accent),
-                    ("hrv", scores["hrv"], PALETTE.positive),
-                    ("strain", scores["strain"], PALETTE.orange),
-                    ("movement", scores["move"], PALETTE.violet),
-                ],
-            )
-        )
+        self.col.addWidget(BiometricPanel(telemetry))
 
         trends = QWidget()
         hl = QHBoxLayout(trends)

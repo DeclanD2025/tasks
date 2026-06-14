@@ -1,7 +1,7 @@
 """Composite HUD panels and the mission header.
 
   SystemHeader          — mission header: title, timestamp, sync state, DB status
-  BiometricPanel        — medical-HUD biometric radar/silhouette placeholder
+  BiometricPanel        — full-height medical/military HUD body scan
   FinanceTerminalPanel  — market-intelligence allocation donut + readouts
   VitalsStrip           — a row of compact metric cells inside a HudPanel
   ZoneDistribution      — a horizontal stacked-zone bar (training zones / risk)
@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 from datetime import datetime
 
-from PySide6.QtCore import QPointF, Qt, QTimer
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
@@ -115,20 +115,20 @@ class VitalsStrip(HudPanel):
 # Biometric panel (medical HUD)
 # --------------------------------------------------------------------------- #
 class BiometricPanel(HudPanel):
-    """Central biometric panel: a radar-style scan over a human silhouette."""
+    """Central biometric panel: a full-height technical body scan."""
 
-    def __init__(self, scores: dict[str, float], parent=None):
+    def __init__(self, telemetry: list[dict], parent=None):
         super().__init__("BIOMETRIC SCAN", "HLT-CORE", parent, status="LIVE")
-        self._scan = _BiometricScan(scores)
+        self._scan = _BiometricScan(telemetry)
         self.body.addWidget(self._scan)
 
 
 class _BiometricScan(QWidget):
-    def __init__(self, scores: dict[str, float], parent=None):
+    def __init__(self, telemetry: list[dict], parent=None):
         super().__init__(parent)
-        self._scores = scores
+        self._telemetry = telemetry
         self._t = 0.0
-        self.setMinimumHeight(300)
+        self.setMinimumHeight(620)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._timer.start(50)
@@ -142,188 +142,245 @@ class _BiometricScan(QWidget):
         p.setRenderHint(QPainter.Antialiasing, True)
         w, h = self.width(), self.height()
         cx, cy = w / 2, h / 2
-        radius = min(w, h) * 0.42
+        body_h = h * 0.84
+        body_w = min(w * 0.26, body_h * 0.28)
 
-        # concentric scan rings
-        for i, rr in enumerate((radius, radius * 0.72, radius * 0.44)):
-            ring = QColor(PALETTE.accent)
-            ring.setAlpha(40 - i * 8)
-            p.setPen(QPen(ring, 1.0))
-            p.setBrush(Qt.NoBrush)
-            p.drawEllipse(QPointF(cx, cy), rr, rr)
-
-        # rotating sweep wedge
-        sweep_angle = self._t * 40 % 360
-        sweep = QColor(PALETTE.accent)
-        sweep.setAlpha(70)
-        p.setPen(QPen(sweep, 1.6))
-        a = math.radians(sweep_angle)
-        p.drawLine(QPointF(cx, cy), QPointF(cx + radius * math.cos(a), cy + radius * math.sin(a)))
-
-        # crosshairs
-        cross = QColor(PALETTE.border)
-        cross.setAlpha(160)
-        p.setPen(QPen(cross, 1.0))
-        p.drawLine(QPointF(cx - radius, cy), QPointF(cx + radius, cy))
-        p.drawLine(QPointF(cx, cy - radius), QPointF(cx, cy + radius))
-
-        self._paint_body_scan(p, cx, cy, radius)
-
-        # Vital markers pinned to anatomical regions with short readout leads.
-        marker_layout = {
-            "sleep": ((0.0, -0.54), (0.0, -0.74), Qt.AlignmentFlag.AlignCenter),
-            "hrv": ((0.19, -0.07), (0.54, -0.16), Qt.AlignmentFlag.AlignLeft),
-            "pulse": ((0.12, 0.02), (0.50, 0.22), Qt.AlignmentFlag.AlignLeft),
-            "strain": ((-0.12, 0.55), (-0.54, 0.62), Qt.AlignmentFlag.AlignRight),
-            "move": ((-0.32, 0.10), (-0.56, -0.02), Qt.AlignmentFlag.AlignRight),
-        }
-        lead = QColor(PALETTE.accent_dim)
-        lead.setAlpha(150)
-        p.setPen(QPen(lead, 1.0))
-        for name, score in self._scores.items():
-            target_pos, label_pos, align = marker_layout.get(
-                name, ((0.0, 0.0), (0.52, 0.0), Qt.AlignmentFlag.AlignLeft)
-            )
-            target = self._pt(cx, cy, radius, *target_pos)
-            label = self._pt(cx, cy, radius, *label_pos)
-            p.drawLine(target, label)
-            col = (
-                PALETTE.positive
-                if score >= 0.66
-                else (PALETTE.orange if score >= 0.4 else PALETTE.coral)
-            )
-            p.setPen(Qt.NoPen)
-            p.setBrush(QColor(col))
-            p.drawEllipse(target, 3.0, 3.0)
-            p.drawEllipse(label, 3.2, 3.2)
-            p.setPen(QColor(PALETTE.text_dim))
-            f = p.font()
-            f.setPointSize(TYPE.nano)
-            p.setFont(f)
-            label_width = 68
-            x = (
-                label.x() - label_width - 8
-                if align == Qt.AlignmentFlag.AlignRight
-                else label.x() + 8
-            )
-            if align == Qt.AlignmentFlag.AlignCenter:
-                x = label.x() - label_width / 2
-            p.drawText(int(x), int(label.y() - 8), label_width, 14, align, name.upper())
+        self._paint_scan_field(p, w, h, cx, cy, body_h)
+        body = self._body_points(cx, cy, body_w, body_h)
+        self._paint_wireframe_body(p, body)
+        self._paint_telemetry(p, w, h, body)
         p.end()
 
-    def _pt(self, cx: float, cy: float, radius: float, x: float, y: float) -> QPointF:
-        return QPointF(cx + radius * x, cy + radius * y)
+    def _paint_scan_field(
+        self, p: QPainter, w: int, h: int, cx: float, cy: float, body_h: float
+    ) -> None:
+        grid = QColor(PALETTE.grid)
+        grid.setAlpha(130)
+        p.setPen(QPen(grid, 1.0))
+        for i in range(9):
+            x = w * (0.12 + i * 0.095)
+            p.drawLine(QPointF(x, h * 0.06), QPointF(x, h * 0.94))
+        for i in range(11):
+            y = h * (0.08 + i * 0.084)
+            p.drawLine(QPointF(w * 0.08, y), QPointF(w * 0.92, y))
 
-    def _path(self, cx: float, cy: float, radius: float, points: list[tuple[float, float]]):
-        path = QPainterPath(self._pt(cx, cy, radius, *points[0]))
-        for x, y in points[1:]:
-            path.lineTo(self._pt(cx, cy, radius, x, y))
-        path.closeSubpath()
-        return path
+        ring = QColor(PALETTE.accent_dim)
+        ring.setAlpha(70)
+        p.setPen(QPen(ring, 1.0))
+        for rr in (body_h * 0.20, body_h * 0.34, body_h * 0.48):
+            p.drawEllipse(QPointF(cx, cy), rr, rr)
 
-    def _paint_body_scan(self, p: QPainter, cx: float, cy: float, radius: float) -> None:
-        fill = QColor(PALETTE.accent)
-        fill.setAlpha(18)
+        cross = QColor(PALETTE.border)
+        cross.setAlpha(170)
+        p.setPen(QPen(cross, 1.0))
+        p.drawLine(QPointF(cx - body_h * 0.28, cy), QPointF(cx + body_h * 0.28, cy))
+        p.drawLine(QPointF(cx, cy - body_h * 0.48), QPointF(cx, cy + body_h * 0.48))
+
+        scan_y = h * 0.08 + (0.5 + 0.5 * math.sin(self._t * 1.6)) * h * 0.84
+        sweep = QColor(PALETTE.accent)
+        sweep.setAlpha(135)
+        p.setPen(QPen(sweep, 1.6))
+        p.drawLine(QPointF(w * 0.20, scan_y), QPointF(w * 0.80, scan_y))
+        glow = QColor(PALETTE.accent)
+        glow.setAlpha(28)
+        p.fillRect(QRectF(w * 0.20, scan_y - 8, w * 0.60, 16), glow)
+
+    def _body_points(
+        self, cx: float, cy: float, body_w: float, body_h: float
+    ) -> dict[str, QPointF]:
+        top = cy - body_h / 2
+        return {
+            "head": QPointF(cx, top + body_h * 0.085),
+            "neck": QPointF(cx, top + body_h * 0.175),
+            "sternum": QPointF(cx, top + body_h * 0.285),
+            "pelvis": QPointF(cx, top + body_h * 0.535),
+            "left_shoulder": QPointF(cx - body_w * 0.47, top + body_h * 0.205),
+            "right_shoulder": QPointF(cx + body_w * 0.47, top + body_h * 0.205),
+            "left_elbow": QPointF(cx - body_w * 0.72, top + body_h * 0.385),
+            "right_elbow": QPointF(cx + body_w * 0.72, top + body_h * 0.385),
+            "left_hand": QPointF(cx - body_w * 0.58, top + body_h * 0.575),
+            "right_hand": QPointF(cx + body_w * 0.58, top + body_h * 0.575),
+            "left_hip": QPointF(cx - body_w * 0.24, top + body_h * 0.535),
+            "right_hip": QPointF(cx + body_w * 0.24, top + body_h * 0.535),
+            "left_knee": QPointF(cx - body_w * 0.28, top + body_h * 0.745),
+            "right_knee": QPointF(cx + body_w * 0.28, top + body_h * 0.745),
+            "left_foot": QPointF(cx - body_w * 0.34, top + body_h * 0.965),
+            "right_foot": QPointF(cx + body_w * 0.34, top + body_h * 0.965),
+        }
+
+    def _paint_wireframe_body(self, p: QPainter, body: dict[str, QPointF]) -> None:
         outline = QColor(PALETTE.accent)
-        outline.setAlpha(150)
-        inner = QColor(PALETTE.accent_dim)
-        inner.setAlpha(105)
+        outline.setAlpha(165)
+        dim = QColor(PALETTE.accent_dim)
+        dim.setAlpha(105)
+        faint = QColor(PALETTE.border)
+        faint.setAlpha(170)
 
-        p.setPen(QPen(outline, 1.5))
+        head = body["head"]
+        head_r = abs(body["neck"].y() - head.y()) * 0.78
+        p.setPen(QPen(outline, 1.4))
+        p.setBrush(Qt.NoBrush)
+        p.drawEllipse(head, head_r * 0.72, head_r)
+        p.drawLine(body["head"], body["neck"])
+        p.drawLine(body["neck"], body["sternum"])
+        p.drawLine(body["sternum"], body["pelvis"])
+
+        skeleton_lines = [
+            ("left_shoulder", "right_shoulder"),
+            ("left_shoulder", "left_elbow"),
+            ("left_elbow", "left_hand"),
+            ("right_shoulder", "right_elbow"),
+            ("right_elbow", "right_hand"),
+            ("left_shoulder", "sternum"),
+            ("right_shoulder", "sternum"),
+            ("sternum", "left_hip"),
+            ("sternum", "right_hip"),
+            ("left_hip", "right_hip"),
+            ("left_hip", "left_knee"),
+            ("left_knee", "left_foot"),
+            ("right_hip", "right_knee"),
+            ("right_knee", "right_foot"),
+        ]
+        for a, b in skeleton_lines:
+            p.drawLine(body[a], body[b])
+
+        torso = QPainterPath(body["neck"])
+        torso.cubicTo(
+            body["left_shoulder"],
+            QPointF(body["left_hip"].x() - 18, body["sternum"].y() + 80),
+            body["left_hip"],
+        )
+        torso.lineTo(body["right_hip"])
+        torso.cubicTo(
+            QPointF(body["right_hip"].x() + 18, body["sternum"].y() + 80),
+            body["right_shoulder"],
+            body["neck"],
+        )
+        fill = QColor(PALETTE.accent)
+        fill.setAlpha(12)
         p.setBrush(fill)
-
-        # Head and neck.
-        head = self._pt(cx, cy, radius, 0.0, -0.44)
-        p.drawEllipse(head, radius * 0.12, radius * 0.14)
-        neck = self._path(
-            cx,
-            cy,
-            radius,
-            [(-0.055, -0.30), (0.055, -0.30), (0.075, -0.20), (-0.075, -0.20)],
-        )
-        p.drawPath(neck)
-
-        # Torso: broad shoulders, narrowed waist, hip bowl.
-        torso = QPainterPath(self._pt(cx, cy, radius, 0.0, -0.26))
-        torso.cubicTo(
-            self._pt(cx, cy, radius, -0.18, -0.25),
-            self._pt(cx, cy, radius, -0.28, -0.17),
-            self._pt(cx, cy, radius, -0.31, -0.05),
-        )
-        torso.cubicTo(
-            self._pt(cx, cy, radius, -0.28, 0.14),
-            self._pt(cx, cy, radius, -0.18, 0.28),
-            self._pt(cx, cy, radius, -0.16, 0.40),
-        )
-        torso.cubicTo(
-            self._pt(cx, cy, radius, -0.08, 0.47),
-            self._pt(cx, cy, radius, 0.08, 0.47),
-            self._pt(cx, cy, radius, 0.16, 0.40),
-        )
-        torso.cubicTo(
-            self._pt(cx, cy, radius, 0.18, 0.28),
-            self._pt(cx, cy, radius, 0.28, 0.14),
-            self._pt(cx, cy, radius, 0.31, -0.05),
-        )
-        torso.cubicTo(
-            self._pt(cx, cy, radius, 0.28, -0.17),
-            self._pt(cx, cy, radius, 0.18, -0.25),
-            self._pt(cx, cy, radius, 0.0, -0.26),
-        )
+        p.setPen(QPen(faint, 1.0))
         p.drawPath(torso)
 
-        limb_specs = [
-            [
-                (-0.30, -0.11),
-                (-0.43, 0.08),
-                (-0.37, 0.27),
-                (-0.26, 0.37),
-                (-0.20, 0.30),
-                (-0.27, 0.08),
-            ],
-            [(0.30, -0.11), (0.43, 0.08), (0.37, 0.27), (0.26, 0.37), (0.20, 0.30), (0.27, 0.08)],
-            [
-                (-0.13, 0.40),
-                (-0.22, 0.60),
-                (-0.17, 0.82),
-                (-0.27, 0.88),
-                (-0.04, 0.88),
-                (-0.03, 0.58),
-            ],
-            [(0.13, 0.40), (0.22, 0.60), (0.17, 0.82), (0.27, 0.88), (0.04, 0.88), (0.03, 0.58)],
-        ]
-        for spec in limb_specs:
-            p.drawPath(self._path(cx, cy, radius, spec))
-
-        # Interior scan details: spine, clavicle, rib arcs, joints.
         p.setBrush(Qt.NoBrush)
-        p.setPen(QPen(inner, 1.1))
-        p.drawLine(self._pt(cx, cy, radius, 0.0, -0.27), self._pt(cx, cy, radius, 0.0, 0.43))
-        p.drawLine(self._pt(cx, cy, radius, -0.24, -0.11), self._pt(cx, cy, radius, 0.24, -0.11))
-        for y, width in [(-0.02, 0.18), (0.08, 0.21), (0.18, 0.18)]:
+        p.setPen(QPen(dim, 1.0))
+        rib_top = body["sternum"].y() - 8
+        rib_width = abs(body["right_shoulder"].x() - body["left_shoulder"].x()) * 0.58
+        for i in range(5):
+            y = rib_top + i * 18
             p.drawArc(
-                int(cx - radius * width),
-                int(cy + radius * y - radius * 0.055),
-                int(radius * width * 2),
-                int(radius * 0.11),
+                int(body["sternum"].x() - rib_width / 2),
+                int(y),
+                int(rib_width),
+                26,
                 0,
                 180 * 16,
             )
 
-        joint = QColor(PALETTE.accent)
-        joint.setAlpha(180)
-        p.setPen(QPen(joint, 1.0))
-        for x, y in [
-            (-0.29, -0.11),
-            (0.29, -0.11),
-            (-0.38, 0.22),
-            (0.38, 0.22),
-            (-0.15, 0.42),
-            (0.15, 0.42),
-            (-0.17, 0.62),
-            (0.17, 0.62),
-        ]:
-            p.drawRect(int(cx + radius * x - 3), int(cy + radius * y - 3), 6, 6)
+        p.setPen(QPen(outline, 1.0))
+        for key, pt in body.items():
+            if key == "head":
+                continue
+            p.drawRect(int(pt.x() - 3), int(pt.y() - 3), 6, 6)
+
+        p.setPen(QPen(dim, 0.9))
+        for offset in (-8, 8):
+            p.drawLine(
+                QPointF(body["sternum"].x() + offset, body["neck"].y()),
+                QPointF(body["pelvis"].x() + offset * 0.35, body["pelvis"].y()),
+            )
+
+        label = QColor(PALETTE.text_faint)
+        p.setPen(label)
+        f = p.font()
+        f.setPointSize(TYPE.nano)
+        f.setFamily(TYPE.mono.split(",")[0])
+        p.setFont(f)
+        p.drawText(int(body["head"].x() - 38), int(body["head"].y() - head_r - 14), "SKELETON")
+
+    def _paint_telemetry(self, p: QPainter, w: int, h: int, body: dict[str, QPointF]) -> None:
+        anchors = [
+            body["head"],
+            body["sternum"],
+            body["left_shoulder"],
+            body["right_shoulder"],
+            body["pelvis"],
+            body["left_knee"],
+            body["right_knee"],
+        ]
+        slots = [
+            QRectF(w * 0.06, h * 0.10, w * 0.24, 58),
+            QRectF(w * 0.70, h * 0.10, w * 0.24, 58),
+            QRectF(w * 0.05, h * 0.34, w * 0.24, 58),
+            QRectF(w * 0.71, h * 0.34, w * 0.24, 58),
+            QRectF(w * 0.06, h * 0.60, w * 0.24, 58),
+            QRectF(w * 0.70, h * 0.60, w * 0.24, 58),
+            QRectF(w * 0.38, h * 0.83, w * 0.24, 58),
+        ]
+        lead = QColor(PALETTE.accent_dim)
+        lead.setAlpha(150)
+        for i, metric in enumerate(self._telemetry[:7]):
+            rect = slots[i]
+            anchor = anchors[i]
+            card_edge = QPointF(rect.left(), rect.center().y())
+            if rect.center().x() < w / 2:
+                card_edge = QPointF(rect.right(), rect.center().y())
+            p.setPen(QPen(lead, 1.0))
+            p.drawLine(anchor, card_edge)
+
+            score = float(metric.get("score", 0.5))
+            col = self._score_color(score)
+            bg = QColor(PALETTE.bg_panel_alt)
+            bg.setAlpha(170)
+            p.setPen(Qt.NoPen)
+            p.setBrush(bg)
+            p.drawRect(rect)
+            p.fillRect(QRectF(rect.left(), rect.top(), 2, rect.height()), QColor(col))
+            p.setPen(QPen(QColor(PALETTE.border), 1.0))
+            p.setBrush(Qt.NoBrush)
+            p.drawRect(rect.adjusted(0, 0, -1, -1))
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(col))
+            p.drawEllipse(anchor, 3.2, 3.2)
+
+            f = p.font()
+            f.setPointSize(TYPE.nano)
+            f.setFamily(TYPE.mono.split(",")[0])
+            f.setBold(True)
+            p.setFont(f)
+            p.setPen(QColor(PALETTE.text_faint))
+            p.drawText(
+                int(rect.left() + 10),
+                int(rect.top() + 16),
+                str(metric["label"]).upper(),
+            )
+            f.setPointSize(TYPE.h2)
+            f.setBold(True)
+            p.setFont(f)
+            p.setPen(QColor(PALETTE.text))
+            p.drawText(
+                int(rect.left() + 10),
+                int(rect.top() + 39),
+                str(metric["value"]),
+            )
+            f.setPointSize(TYPE.nano)
+            f.setBold(False)
+            p.setFont(f)
+            p.setPen(QColor(col))
+            p.drawText(
+                int(rect.right() - 46),
+                int(rect.top() + 17),
+                f"{score * 100:02.0f}%",
+            )
+
+    def _score_color(self, score: float) -> str:
+        if score >= 0.72:
+            return PALETTE.positive
+        if score >= 0.45:
+            return PALETTE.accent
+        if score >= 0.28:
+            return PALETTE.orange
+        return PALETTE.coral
 
 
 # --------------------------------------------------------------------------- #

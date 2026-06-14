@@ -177,13 +177,15 @@ def health_frame(user_id: int, days: int = 30) -> pd.DataFrame:
                 HealthMetricDaily.sleep_minutes,
                 HealthMetricDaily.hrv_ms,
                 HealthMetricDaily.resting_hr,
+                HealthMetricDaily.weight_kg,
             )
             .where(HealthMetricDaily.user_id == user_id)
             .where(HealthMetricDaily.day >= since)
         ).all()
-    return pd.DataFrame(rows, columns=["day", "sleep_minutes", "hrv_ms", "resting_hr"]).sort_values(
-        "day"
-    )
+    return pd.DataFrame(
+        rows,
+        columns=["day", "sleep_minutes", "hrv_ms", "resting_hr", "weight_kg"],
+    ).sort_values("day")
 
 
 def activity_frame(user_id: int, days: int = 30) -> pd.DataFrame:
