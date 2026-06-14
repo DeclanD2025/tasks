@@ -48,7 +48,7 @@ from app.ui.components.viz import (
 from app.ui.components.widgets import GlassPanel, InsightCard, MetricCard
 from app.services import Metric
 from app.ui.navigation import NAV_ITEMS
-from app.ui.themes.theme import PALETTE
+from app.ui.themes.theme import PALETTE, TYPE
 
 
 _NAV_BY_KEY = {item.key: item for item in NAV_ITEMS}
@@ -129,6 +129,28 @@ def _feed_panel(title: str, code: str, insights: list[dict], *, status: str = "L
     panel = HudPanel(title, code, status=status)
     panel.body.addWidget(InsightFeed(insights))
     return panel
+
+
+def _factor_row(factor) -> QWidget:
+    """A single derivation line: input label · measured readout · real/unwired."""
+    row = QWidget()
+    rl = QHBoxLayout(row)
+    rl.setContentsMargins(0, 0, 0, 0)
+    rl.setSpacing(8)
+    dot = QLabel("●")
+    dot.setStyleSheet(
+        f"color:{PALETTE.accent if factor.is_real else PALETTE.text_faint}; font-size:7px;"
+    )
+    label = QLabel(factor.label.upper())
+    label.setObjectName("Mono")
+    readout = QLabel(factor.readout)
+    readout.setObjectName("Faint" if not factor.is_real else "Muted")
+    readout.setStyleSheet(f"font-size:{TYPE.nano}px;")
+    rl.addWidget(dot)
+    rl.addWidget(label)
+    rl.addStretch(1)
+    rl.addWidget(readout)
+    return row
 
 
 # --------------------------------------------------------------------------- #
@@ -488,15 +510,26 @@ class StoicPage(_ScrollPage):
         self.clear()
         snap = get_stoic_snapshot(self._user_id)
 
+        eud_label = f"EUDAIMONIA {snap.eudaimonia_index:.0f}" if snap.eudaimonia_index is not None \
+            else "EUDAIMONIA —"
         self.col.addWidget(
             SystemHeader(
                 snap.title,
                 _nav_code("stoic"),
                 subtitle=snap.subtitle,
-                sync_label=f"EUDAIMONIA {snap.eudaimonia_index:.0f}",
-                database_label="DISCIPLINE LOCAL",
+                sync_label=eud_label,
+                database_label=f"DATA {snap.eudaimonia_coverage * 100:.0f}%",
             )
         )
+
+        # Honesty banner: how the numbers are derived, in one line.
+        banner = QLabel(
+            "Every score below is derived from real data only. Unmeasured virtues read "
+            "NO DATA rather than an estimate. Coverage = share backed by a live source."
+        )
+        banner.setObjectName("Faint")
+        banner.setWordWrap(True)
+        self.col.addWidget(banner)
 
         # Row 1: eudaimonia gauge | four-virtues radar | equanimity trend
         row1 = QWidget()
@@ -508,52 +541,43 @@ class StoicPage(_ScrollPage):
         g1.setColumnStretch(1, 4)
         g1.setColumnStretch(2, 3)
 
-        eud = HudPanel("Eudaimonia Index", "STO-EUD", status="LIVE")
-        eud.body.addWidget(EudaimoniaGauge(snap.eudaimonia_index))
+        eud_status = "LIVE" if snap.eudaimonia_index is not None else "NO DATA"
+        eud = HudPanel("Eudaimonia Index", "STO-EUD", status=eud_status)
+        eud.body.addWidget(EudaimoniaGauge(snap.eudaimonia_index or 0.0))
         eud.body.addWidget(
             SignalLineChart(snap.eudaimonia_trend, color=PALETTE.accent, height=70)
         )
+        for f in snap.eudaimonia_factors:
+            eud.body.addWidget(_factor_row(f))
         g1.addWidget(eud, 0, 0)
 
-        virtues = HudPanel("Cardinal Virtues", "STO-VRT", status="ASSESSED")
+        # Radar uses 0 for unmeasured virtues but the breakdown shows NO DATA.
+        virtues = HudPanel("Cardinal Virtues", "STO-VRT",
+                           status=f"{sum(v.has_data for v in snap.virtues)}/4 MEASURED")
         virtues.body.addWidget(
             RadarDial(
                 [v.name for v in snap.virtues],
-                [v.score / 100.0 for v in snap.virtues],
+                [(v.score / 100.0 if v.has_data else 0.0) for v in snap.virtues],
                 color=PALETTE.accent,
             )
         )
         g1.addWidget(virtues, 0, 1)
 
-        equ = HudPanel("Equanimity · Ataraxia", "STO-EQU",
-                       status=f"{snap.equanimity * 100:.0f}%")
+        equ_status = f"{snap.equanimity.value * 100:.0f}%" if snap.equanimity.has_data else "NO DATA"
+        equ = HudPanel("Equanimity · Ataraxia", "STO-EQU", status=equ_status)
         equ.body.addWidget(
             SignalLineChart(
                 [v * 100 for v in snap.equanimity_trend], color=PALETTE.violet,
-                unit="%", height=150,
+                unit="%", height=130,
             )
         )
-        equ_note = QLabel("Physiological calm and low day-to-day volatility — the body's "
-                          "report on a settled mind.")
-        equ_note.setObjectName("Faint")
-        equ_note.setWordWrap(True)
-        equ.body.addWidget(equ_note)
+        for f in snap.equanimity.factors:
+            equ.body.addWidget(_factor_row(f))
         g1.addWidget(equ, 0, 2)
         self.col.addWidget(row1)
 
-        # Virtue cells strip (with one-line interpretations)
-        self.col.addWidget(
-            VitalsStrip(
-                "Virtue Breakdown",
-                "STO-VBD",
-                [
-                    (v.greek[:6].upper(),
-                     Metric(f"{v.name} ({v.greek})", f"{v.score:.0f}",
-                            trend="up" if v.score >= 55 else "down"))
-                    for v in snap.virtues
-                ],
-            )
-        )
+        # Virtue derivation panel: per-virtue score, coverage, and factor chain.
+        self.col.addWidget(self._virtue_derivation_panel(snap.virtues))
 
         # Row 2: dichotomy of control | daily practice
         row2 = QWidget()
@@ -563,9 +587,14 @@ class StoicPage(_ScrollPage):
         g2.setColumnStretch(0, 1)
         g2.setColumnStretch(1, 1)
 
-        ctrl = HudPanel("Dichotomy of Control", "STO-DOC",
-                        status="ALIGNED" if snap.control_ratio >= 0.5 else "DRIFT")
-        ctrl.body.addWidget(ControlGauge(snap.control_ratio))
+        if snap.control.has_data:
+            ctrl_status = "ALIGNED" if snap.control.value >= 0.5 else "DRIFT"
+        else:
+            ctrl_status = "NO DATA"
+        ctrl = HudPanel("Dichotomy of Control", "STO-DOC", status=ctrl_status)
+        ctrl.body.addWidget(ControlGauge(snap.control.value if snap.control.has_data else 0.0))
+        for f in snap.control.factors:
+            ctrl.body.addWidget(_factor_row(f))
         ctrl_note = QLabel("Epictetus: spend yourself only on what is up to you — your "
                            "judgements, your effort, your assent.")
         ctrl_note.setObjectName("Faint")
@@ -573,8 +602,17 @@ class StoicPage(_ScrollPage):
         ctrl.body.addWidget(ctrl_note)
         g2.addWidget(ctrl, 0, 0)
 
-        prac = HudPanel("Daily Practice", "STO-PRC",
-                        status=f"{snap.practice_consistency * 100:.0f}%")
+        prac_status = f"{snap.practice_consistency * 100:.0f}%" \
+            if snap.practice_tracked and snap.practice_consistency is not None else "UNTRACKED"
+        prac = HudPanel("Daily Practice", "STO-PRC", status=prac_status)
+        if not snap.practice_tracked:
+            untracked = QLabel(
+                "No check-in source yet — streaks are not invented. The daily check-in "
+                "(planned) will record these honestly."
+            )
+            untracked.setObjectName("Faint")
+            untracked.setWordWrap(True)
+            prac.body.addWidget(untracked)
         for pr in snap.practices:
             r = QWidget()
             rl = QHBoxLayout(r)
@@ -589,7 +627,7 @@ class StoicPage(_ScrollPage):
             name.setObjectName("PanelTitle")
             code = QLabel(pr.code)
             code.setObjectName("ModuleCode")
-            streak = QLabel(f"{pr.streak}d streak" if pr.done else "—")
+            streak = QLabel(f"{pr.streak}d streak" if pr.tracked and pr.done else "untracked")
             streak.setObjectName("Mono")
             rl.addWidget(mark)
             rl.addWidget(name, 1)
@@ -631,6 +669,43 @@ class StoicPage(_ScrollPage):
         maxim_panel = HudPanel("Maxim", "STO-MAX")
         maxim_panel.body.addWidget(MaximPlate(snap.maxim, snap.maxim_author))
         self.col.addWidget(maxim_panel)
+
+    def _virtue_derivation_panel(self, virtues: list) -> HudPanel:
+        """Per-virtue: score, coverage bar, and the factor chain that produced it."""
+        panel = HudPanel("Virtue Derivation", "STO-VBD",
+                         status=f"{sum(v.has_data for v in virtues)}/4 MEASURED")
+        for v in virtues:
+            block = QWidget()
+            bl = QVBoxLayout(block)
+            bl.setContentsMargins(0, 4, 0, 4)
+            bl.setSpacing(2)
+
+            head = QHBoxLayout()
+            head.setSpacing(8)
+            name = QLabel(f"{v.name.upper()} · {v.greek}")
+            name.setObjectName("PanelTitle")
+            head.addWidget(name)
+            head.addStretch(1)
+            score = QLabel(v.display if v.has_data else "NO DATA")
+            score.setStyleSheet(
+                f"color:{PALETTE.text if v.has_data else PALETTE.text_faint};"
+                f" font-size:{TYPE.h2}px; font-weight:700;"
+            )
+            head.addWidget(score)
+            cov = QLabel(f"{v.coverage * 100:.0f}% data")
+            cov.setObjectName("Mono")
+            head.addWidget(cov)
+            bl.addLayout(head)
+
+            for f in v.factors:
+                bl.addWidget(_factor_row(f))
+
+            note = QLabel(v.note)
+            note.setObjectName("Faint")
+            note.setWordWrap(True)
+            bl.addWidget(note)
+            panel.body.addWidget(block)
+        return panel
 
 
 # --------------------------------------------------------------------------- #

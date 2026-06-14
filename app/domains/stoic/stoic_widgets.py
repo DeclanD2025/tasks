@@ -22,9 +22,10 @@ from app.ui.themes.theme import PALETTE, TYPE
 class EudaimoniaGauge(QWidget):
     """A radial gauge for the composite eudaimonia index (0..100)."""
 
-    def __init__(self, value: float, parent=None):
+    def __init__(self, value: float | None, parent=None):
         super().__init__(parent)
-        self._value = max(0.0, min(100.0, value))
+        self._has_data = value is not None
+        self._value = max(0.0, min(100.0, value or 0.0))
         self._t = 0.0
         self.setMinimumHeight(230)
         self._timer = QTimer(self)
@@ -77,7 +78,7 @@ class EudaimoniaGauge(QWidget):
         f.setBold(True)
         p.setFont(f)
         p.drawText(QRectF(cx - radius, cy - 30, radius * 2, 44),
-                   Qt.AlignCenter, f"{self._value:.0f}")
+                   Qt.AlignCenter, f"{self._value:.0f}" if self._has_data else "—")
         p.setPen(QColor(PALETTE.text_faint))
         f.setPointSize(TYPE.nano)
         f.setBold(False)
