@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local-first data / databases (never commit personal data)
+*.db
+*.sqlite3
+data/
+!data/.gitkeep
+
+# Environment / secrets
+.env
+.env.local
+*.env
+!.env.example
+
+# Packaging artifacts
+build/
+dist/
+*.spec.bak
+*.app/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+*.log
+logs/
