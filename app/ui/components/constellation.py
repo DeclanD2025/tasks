@@ -143,7 +143,7 @@ class ConstellationBackground(QWidget):
 
     def _paint_orion(self, p: QPainter, w: int, h: int) -> None:
         # Connecting lines — thin, faint accent blue.
-        line_col = QColor(PALETTE.accent_2)
+        line_col = QColor(PALETTE.accent)
         line_col.setAlpha(int(70 * self._dim))
         pen = p.pen()
         pen.setColor(line_col)

@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from app.jobs import JobScheduler
 from app.services import get_default_user_id
-from app.ui.components.constellation import ConstellationBackground
+from app.ui.components.hud_background import HudBackground
 from app.ui.components.sidebar import Sidebar
 from app.ui.components.topbar import TopBar
 from app.ui.navigation import NAV_ITEMS
@@ -34,8 +34,8 @@ class AppShell(QWidget):
         self._user_id = get_default_user_id()
         self._nav_lookup = {n.key: n for n in NAV_ITEMS}
 
-        # Subtle constellation behind everything.
-        self._bg = ConstellationBackground(self, density=140, dim=0.45)
+        # App-wide HUD backdrop behind all mission-control surfaces.
+        self._bg = HudBackground(self, density=150, dim=0.62)
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)

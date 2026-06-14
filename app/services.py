@@ -14,10 +14,11 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import desc, select
 
 from app.db.database import session_scope
 from app.db.models import (
+    Account,
     ActivityMetricDaily,
     BalanceSnapshot,
     HealthMetricDaily,
@@ -35,8 +36,8 @@ class Metric:
 
     label: str
     value: str
-    delta: str = ""          # e.g. "+4.2%"
-    trend: str = "flat"      # up | down | flat
+    delta: str = ""  # e.g. "+4.2%"
+    trend: str = "flat"  # up | down | flat
     series: list[float] | None = None  # optional sparkline data
 
 
@@ -83,6 +84,87 @@ def monthly_spending(user_id: int) -> pd.DataFrame:
     return df.groupby("month", as_index=False)["spend"].sum()
 
 
+def account_snapshot_latest(user_id: int) -> list[dict]:
+    """Latest balance per account, in major currency units."""
+    with session_scope() as s:
+        rows = s.execute(
+            select(
+                Account.name,
+                Account.kind,
+                Account.currency,
+                BalanceSnapshot.snapshot_date,
+                BalanceSnapshot.balance_minor,
+            )
+            .join(BalanceSnapshot, BalanceSnapshot.account_id == Account.id)
+            .where(Account.user_id == user_id)
+        ).all()
+    if not rows:
+        return []
+    df = pd.DataFrame(
+        rows,
+        columns=["name", "kind", "currency", "snapshot_date", "balance_minor"],
+    )
+    latest = (
+        df.sort_values("snapshot_date")
+        .groupby(["name", "kind", "currency"], as_index=False)
+        .tail(1)
+        .copy()
+    )
+    latest["value"] = latest["balance_minor"] / 100.0
+    return latest.sort_values("value", ascending=False)[
+        ["name", "kind", "currency", "value", "snapshot_date"]
+    ].to_dict("records")
+
+
+def spending_by_category(user_id: int, days: int = 30) -> list[dict]:
+    """Negative transactions grouped by category for the recent window."""
+    since = date.today() - timedelta(days=days)
+    with session_scope() as s:
+        rows = s.execute(
+            select(Transaction.category, Transaction.amount_minor)
+            .join(Account, Transaction.account_id == Account.id)
+            .where(Account.user_id == user_id)
+            .where(Transaction.booked_at >= since)
+            .where(Transaction.amount_minor < 0)
+        ).all()
+    if not rows:
+        return []
+    df = pd.DataFrame(rows, columns=["category", "amount_minor"])
+    df["spend"] = -df["amount_minor"] / 100.0
+    grouped = df.groupby("category", as_index=False)["spend"].sum()
+    return grouped.sort_values("spend", ascending=False).to_dict("records")
+
+
+def recent_transactions(user_id: int, limit: int = 6) -> list[dict]:
+    """Most recent normalised transactions for the finance terminal."""
+    with session_scope() as s:
+        rows = s.execute(
+            select(
+                Transaction.booked_at,
+                Transaction.description,
+                Transaction.category,
+                Transaction.amount_minor,
+                Transaction.currency,
+                Account.name,
+            )
+            .join(Account, Transaction.account_id == Account.id)
+            .where(Account.user_id == user_id)
+            .order_by(desc(Transaction.booked_at), desc(Transaction.id))
+            .limit(limit)
+        ).all()
+    return [
+        {
+            "booked_at": booked_at,
+            "description": description,
+            "category": category,
+            "amount": amount_minor / 100.0,
+            "currency": currency,
+            "account": account,
+        }
+        for booked_at, description, category, amount_minor, currency, account in rows
+    ]
+
+
 # --------------------------------------------------------------------------- #
 # Health / activity
 # --------------------------------------------------------------------------- #
@@ -95,7 +177,9 @@ def health_frame(user_id: int, days: int = 30) -> pd.DataFrame:
                 HealthMetricDaily.sleep_minutes,
                 HealthMetricDaily.hrv_ms,
                 HealthMetricDaily.resting_hr,
-            ).where(HealthMetricDaily.user_id == user_id).where(HealthMetricDaily.day >= since)
+            )
+            .where(HealthMetricDaily.user_id == user_id)
+            .where(HealthMetricDaily.day >= since)
         ).all()
     return pd.DataFrame(rows, columns=["day", "sleep_minutes", "hrv_ms", "resting_hr"]).sort_values(
         "day"
@@ -193,33 +277,52 @@ def overview_metrics(user_id: int) -> list[Metric]:
         latest = ms["spend"].iloc[-1]
         prev = ms["spend"].iloc[-2] if len(ms) > 1 else latest
         pct = (latest - prev) / prev * 100 if prev else 0.0
-        metrics.append(
-            Metric("Monthly Spending", f"£{latest:,.0f}", f"{pct:+.1f}%", _trend(pct))
-        )
+        metrics.append(Metric("Monthly Spending", f"£{latest:,.0f}", f"{pct:+.1f}%", _trend(pct)))
 
     hf = health_frame(user_id)
     if not hf.empty:
         avg_sleep = hf["sleep_minutes"].dropna().tail(7).mean()
         metrics.append(
-            Metric("Sleep Average", f"{avg_sleep/60:.1f}h", trend="flat",
-                   series=(hf["sleep_minutes"] / 60).dropna().tolist())
+            Metric(
+                "Sleep Average",
+                f"{avg_sleep / 60:.1f}h",
+                trend="flat",
+                series=(hf["sleep_minutes"] / 60).dropna().tolist(),
+            )
         )
         hrv_recent = hf["hrv_ms"].dropna().tail(7).mean()
         hrv_prev = hf["hrv_ms"].dropna().head(7).mean()
         d = hrv_recent - hrv_prev
         metrics.append(
-            Metric("HRV Trend", f"{hrv_recent:.0f} ms", f"{d:+.0f} ms", _trend(d),
-                   hf["hrv_ms"].dropna().tolist())
+            Metric(
+                "HRV Trend",
+                f"{hrv_recent:.0f} ms",
+                f"{d:+.0f} ms",
+                _trend(d),
+                hf["hrv_ms"].dropna().tolist(),
+            )
         )
 
     af = activity_frame(user_id)
     if not af.empty:
         load = af["training_load"].dropna().tail(7).mean()
-        metrics.append(Metric("Training Load", f"{load:.0f}", trend="flat",
-                              series=af["training_load"].dropna().tolist()))
+        metrics.append(
+            Metric(
+                "Training Load",
+                f"{load:.0f}",
+                trend="flat",
+                series=af["training_load"].dropna().tolist(),
+            )
+        )
         dw = af["deep_work_minutes"].dropna().tail(7).sum() / 60
-        metrics.append(Metric("Deep Work Hours", f"{dw:.1f}h", trend="up",
-                              series=(af["deep_work_minutes"] / 60).dropna().tolist()))
+        metrics.append(
+            Metric(
+                "Deep Work Hours",
+                f"{dw:.1f}h",
+                trend="up",
+                series=(af["deep_work_minutes"] / 60).dropna().tolist(),
+            )
+        )
 
     pm = project_momentum(user_id)
     if not pm.empty:

@@ -64,7 +64,7 @@ class ChartPanel(GlassPanel):
                            brush=pg.mkBrush(fillc))
         return item
 
-    def bars(self, y, x=None, color: str = PALETTE.accent_2) -> None:
+    def bars(self, y, x=None, color: str = PALETTE.accent) -> None:
         x = list(range(len(y))) if x is None else x
         bg = pg.BarGraphItem(x=x, height=y, width=0.6, brush=QColor(color))
         self.plot.addItem(bg)
@@ -143,7 +143,7 @@ class TimelinePanel(GlassPanel):
         for date_label, text in events:
             row = QHBoxLayout()
             dot = QLabel("◆")
-            dot.setStyleSheet(f"color:{PALETTE.accent_2}; font-size:10px;")
+            dot.setStyleSheet(f"color:{PALETTE.accent}; font-size:10px;")
             d = QLabel(date_label)
             d.setObjectName("CardLabel")
             d.setFixedWidth(90)
