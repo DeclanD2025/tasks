@@ -193,11 +193,28 @@ required to launch the demo.
 
 macOS first, then Windows/Linux.
 
-**PyInstaller** (spec provided):
+### Build the double-clickable macOS app
+
+One command builds `dist/ORION.app` and (optionally) installs it to
+`/Applications` so it appears in Finder and Launchpad:
+
+```bash
+./packaging/build_macos.sh            # -> dist/ORION.app
+./packaging/build_macos.sh --install  # also copies to /Applications/ORION.app
+```
+
+Then **double-click `ORION.app`** to launch — no terminal, no Python install
+required on the target machine.
+
+> First launch on another Mac: because the app is ad-hoc signed (not notarised),
+> macOS Gatekeeper may warn. Right-click the app → **Open** → **Open**, once.
+> To distribute it widely, sign with a Developer ID and notarise.
+
+Under the hood this runs **PyInstaller** with the provided spec:
 
 ```bash
 uv pip install -e ".[packaging]"
-uv run pyinstaller packaging/orion.spec
+uv run pyinstaller packaging/orion.spec --noconfirm
 # -> dist/ORION.app
 ```
 

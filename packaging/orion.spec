@@ -1,8 +1,8 @@
 # PyInstaller spec for ORION (macOS first; Windows/Linux later).
 #
-# Build a standalone .app bundle:
+# Build a standalone, double-clickable .app bundle:
 #     uv pip install -e ".[packaging]"
-#     uv run pyinstaller packaging/orion.spec
+#     uv run pyinstaller packaging/orion.spec --noconfirm
 #
 # Output: dist/ORION.app (macOS). The app bundles Python, PySide6/Qt, and the
 # ORION package. The local SQLite DB is created at runtime under the user's
@@ -12,28 +12,33 @@
 # installers per-OS; see README "Packaging" for the Briefcase route.
 
 # -*- mode: python ; coding: utf-8 -*-
+import os
 from PyInstaller.utils.hooks import collect_submodules
 
-block_cipher = None
+# Resolve the project root from the spec location so the build works no matter
+# which directory PyInstaller is invoked from.
+ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
+ENTRY = os.path.join(ROOT, "app", "main.py")
 
 hidden = (
-    collect_submodules("app.integrations")
+    collect_submodules("app")
+    + collect_submodules("app.integrations")
     + collect_submodules("apscheduler")
     + ["pyqtgraph"]
 )
 
 a = Analysis(
-    ["../app/main.py"],
-    pathex=[".."],
+    [ENTRY],
+    pathex=[ROOT],
     binaries=[],
     datas=[],
     hiddenimports=hidden,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib"],
-    cipher=block_cipher,
+    excludes=["tkinter", "matplotlib", "PyQt5", "PyQt6"],
+    noarchive=False,
 )
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure, a.zipped_data)
 
 exe = EXE(
     pyz, a.scripts, [], exclude_binaries=True, name="ORION",
