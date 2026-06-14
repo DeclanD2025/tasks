@@ -21,10 +21,11 @@ from PySide6.QtWidgets import (
 )
 
 from app import services
+from app.domains.health.health_service import get_health_dashboard_snapshot
 from app.ui.components.charts import ChartPanel, TimelinePanel
 from app.ui.components.hud import HudPanel, MetricCell
 from app.ui.components.panels import (
-    BiometricPanel,
+    BiometricScanPanel,
     FinanceTerminalPanel,
     SystemHeader,
     VitalsStrip,
@@ -416,77 +417,17 @@ class ModulePage(_ScrollPage):
         return panel
 
     def _build_health(self) -> None:
-        uid = self._user_id
-        hf = services.health_frame(uid)
-        af = services.activity_frame(uid)
-
-        sleep_series = (hf["sleep_minutes"] / 60).dropna().tolist() if not hf.empty else []
-        hrv_series = hf["hrv_ms"].dropna().tolist() if not hf.empty else []
-        rhr_series = hf["resting_hr"].dropna().tolist() if not hf.empty else []
-        weight_series = hf["weight_kg"].dropna().tolist() if not hf.empty else []
-        load_series = af["training_load"].dropna().tolist() if not af.empty else []
-        active_series = af["active_minutes"].dropna().tolist() if not af.empty else []
-
-        sleep = sum(sleep_series[-7:]) / min(len(sleep_series), 7) if sleep_series else 0.0
-        hrv = sum(hrv_series[-7:]) / min(len(hrv_series), 7) if hrv_series else 0.0
-        rhr = sum(rhr_series[-7:]) / min(len(rhr_series), 7) if rhr_series else 0.0
-        weight = weight_series[-1] if weight_series else 0.0
-        load = sum(load_series[-7:]) / min(len(load_series), 7) if load_series else 0.0
-        active = sum(active_series[-7:]) / min(len(active_series), 7) if active_series else 0.0
-
-        sleep_score = _clamp(sleep / 8.0)
-        hrv_score = _clamp(hrv / 80.0)
-        rhr_score = _clamp(1.0 - ((rhr or 62.0) - 48.0) / 34.0)
-        load_score = _clamp(1.0 - max(0.0, load - 65.0) / 55.0)
-        recovery_score = _clamp(
-            sleep_score * 0.34 + hrv_score * 0.30 + rhr_score * 0.22 + load_score * 0.14
-        )
-        vo2 = 34.0 + hrv * 0.12 + active * 0.035 - max(0.0, rhr - 52.0) * 0.18
-        vo2_score = _clamp((vo2 - 32.0) / 24.0)
-        weight_score = _clamp(1.0 - abs((weight or 79.0) - 79.0) / 8.0)
-
-        telemetry = [
-            {"label": "Sleep", "value": f"{sleep:.1f}h", "score": sleep_score},
-            {"label": "HRV", "value": f"{hrv:.0f} ms", "score": hrv_score},
-            {"label": "Recovery", "value": f"{recovery_score * 100:.0f}%", "score": recovery_score},
-            {"label": "RHR", "value": f"{rhr:.0f} bpm", "score": rhr_score},
-            {
-                "label": "Weight",
-                "value": f"{weight:.1f} kg" if weight else "—",
-                "score": weight_score,
-            },
-            {"label": "VO2", "value": f"{vo2:.1f}", "score": vo2_score},
-            {"label": "Training Load", "value": f"{load:.0f}", "score": load_score},
-        ]
-
-        self.col.addWidget(SystemHeader("Health Telemetry", _nav_code("health")))
-        self.col.addWidget(BiometricPanel(telemetry))
-
-        trends = QWidget()
-        hl = QHBoxLayout(trends)
-        hl.setContentsMargins(0, 0, 0, 0)
-        hl.setSpacing(16)
-        hl.addWidget(
-            _signal_panel(
-                "Sleep Signal",
-                "HLT-SLP",
-                sleep_series or [0, 0],
-                unit="h",
-                color=PALETTE.accent,
-                height=130,
+        snapshot = get_health_dashboard_snapshot(self._user_id)
+        self.col.addWidget(
+            SystemHeader(
+                snapshot.title,
+                _nav_code("health"),
+                subtitle=snapshot.subtitle,
+                sync_label=snapshot.sync_status,
+                database_label=snapshot.database_status,
             )
         )
-        hl.addWidget(
-            _signal_panel(
-                "HRV Signal",
-                "HLT-HRV",
-                hrv_series or [0, 0],
-                unit="ms",
-                color=PALETTE.positive,
-                height=130,
-            )
-        )
-        self.col.addWidget(trends)
+        self.col.addWidget(BiometricScanPanel(snapshot))
 
     def _build_productivity(self) -> None:
         uid = self._user_id

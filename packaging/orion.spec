@@ -21,6 +21,8 @@ ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 ENTRY = os.path.join(ROOT, "app", "main.py")
 ICON = os.path.join(ROOT, "app", "ui", "assets", "orion.icns")
 ICON = ICON if os.path.exists(ICON) else None
+ASSETS = os.path.join(ROOT, "app", "ui", "assets")
+DATAS = [(ASSETS, "app/ui/assets")] if os.path.exists(ASSETS) else []
 
 hidden = (
     collect_submodules("app")
@@ -33,7 +35,7 @@ a = Analysis(
     [ENTRY],
     pathex=[ROOT],
     binaries=[],
-    datas=[(ICON, "app/ui/assets")] if ICON else [],
+    datas=DATAS,
     hiddenimports=hidden,
     hookspath=[],
     runtime_hooks=[],
@@ -43,8 +45,14 @@ a = Analysis(
 pyz = PYZ(a.pure, a.zipped_data)
 
 exe = EXE(
-    pyz, a.scripts, [], exclude_binaries=True, name="ORION",
-    console=False, disable_windowed_traceback=False, icon=ICON,
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="ORION",
+    console=False,
+    disable_windowed_traceback=False,
+    icon=ICON,
 )
 coll = COLLECT(exe, a.binaries, a.zipfiles, a.datas, name="ORION")
 
