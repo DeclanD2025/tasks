@@ -29,6 +29,52 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, value))
 
 
+class TypingLabel(QLabel):
+    """A label that reveals its text character-by-character with a block cursor.
+
+    Gives module headings the feel of a futuristic console booting up. The
+    cursor blinks while typing and for a moment after, then the text settles.
+    """
+
+    def __init__(self, text: str, parent=None, *, style: str = "", interval_ms: int = 38):
+        super().__init__(parent)
+        self._full = text
+        self._n = 0
+        self._cursor_on = True
+        self._settle_ticks = 0
+        if style:
+            self.setStyleSheet(style)
+        self.setText(" ")  # reserve height before typing starts
+
+        self._type_timer = QTimer(self)
+        self._type_timer.timeout.connect(self._tick)
+        self._type_timer.start(interval_ms)
+        self._blink_timer = QTimer(self)
+        self._blink_timer.timeout.connect(self._blink)
+        self._blink_timer.start(420)
+
+    def _render(self):
+        cursor = "▌" if self._cursor_on else " "
+        self.setText(self._full[: self._n] + cursor)
+
+    def _tick(self):
+        if self._n < len(self._full):
+            self._n += 1
+            self._render()
+        else:
+            # Typed out; blink the cursor a few times then remove it.
+            self._settle_ticks += 1
+            if self._settle_ticks > 6:
+                self._type_timer.stop()
+                self._blink_timer.stop()
+                self.setText(self._full)
+
+    def _blink(self):
+        self._cursor_on = not self._cursor_on
+        if self._n <= len(self._full):
+            self._render()
+
+
 # --------------------------------------------------------------------------- #
 # Mission header
 # --------------------------------------------------------------------------- #
@@ -53,9 +99,10 @@ class SystemHeader(QWidget):
 
         left = QVBoxLayout()
         left.setSpacing(1)
-        t = QLabel(title.upper())
-        t.setStyleSheet(
-            f"color:{PALETTE.text}; font-size:{TYPE.h1}px; font-weight:700; letter-spacing:2px;"
+        t = TypingLabel(
+            title.upper(),
+            style=(f"color:{PALETTE.text}; font-size:{TYPE.h1}px; font-weight:700;"
+                   " letter-spacing:2px;"),
         )
         sub = QLabel(subtitle.upper() if subtitle else f"MODULE {code}  ·  ORION OBSERVATORY")
         sub.setObjectName("Mono")

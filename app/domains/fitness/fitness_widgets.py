@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -146,7 +147,10 @@ class DayCell(QFrame):
         self._day = day
         self._in_month = in_month
         self.setAcceptDrops(day is not None)
-        self.setMinimumHeight(74)
+        # Fixed, uniform cell height so a week with one session doesn't stretch
+        # the whole row. Holds the day number plus ~3 session chips.
+        self.setFixedHeight(96)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._lay = QVBoxLayout(self)
         self._lay.setContentsMargins(4, 3, 4, 4)
         self._lay.setSpacing(2)
@@ -304,6 +308,11 @@ class MonthCalendar(QWidget):
                     cell.changed.connect(self._on_changed)
                     self._cells[d] = cell
                 self._grid.addWidget(cell, r, c)
+            self._grid.setRowStretch(r, 0)  # rows stay at the cells' fixed height
+
+        # Equal-width columns; no vertical stretch so the grid stays compact.
+        for c in range(7):
+            self._grid.setColumnStretch(c, 1)
 
     def _on_changed(self):
         self.rebuild()

@@ -56,15 +56,11 @@ class _NavButton(QPushButton):
         glyph.setStyleSheet(f"color:{PALETTE.text_dim}; font-size:14px;")
         lay.addWidget(glyph)
 
-        col = QVBoxLayout()
-        col.setSpacing(0)
+        # Module name only — codes were confusing in the rail (they still appear
+        # as the technical ID inside each module's header).
         label = QLabel(item.label)
         label.setStyleSheet(f"color:inherit; font-size:{TYPE.body}px;")
-        code = QLabel(item.code)
-        code.setObjectName("ModuleCode")
-        col.addWidget(label)
-        col.addWidget(code)
-        lay.addLayout(col)
+        lay.addWidget(label)
         lay.addStretch(1)
 
         _, color = _STATUS.get(item.key, ("nominal", PALETTE.positive))
