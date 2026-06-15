@@ -22,6 +22,8 @@ _SAMPLE = textwrap.dedent("""\
       <Record type="HKCategoryTypeIdentifierSleepAnalysis"
               value="HKCategoryValueSleepAnalysisAsleepREM"
               startDate="2026-06-14 04:00:00 +0000" endDate="2026-06-14 06:00:00 +0000"/>
+      <Record type="HKCategoryTypeIdentifierMindfulSession"
+              startDate="2026-06-14 07:00:00 +0000" endDate="2026-06-14 07:10:00 +0000"/>
       <StateOfMind startDate="2026-06-14 20:00:00 +0000" valence="0.4"/>
       <StateOfMind startDate="2026-06-14 21:00:00 +0000" valence="0.6"/>
     </HealthData>
@@ -40,6 +42,7 @@ def test_parse_export_extracts_per_day_metrics(tmp_path):
     assert r["weight_kg"] == 79.2
     assert r["sleep_minutes"] == 360     # 6 hours asleep (core + REM)
     assert r["mood"] == 0.5              # mean(0.4, 0.6)
+    assert r["mindful_minutes"] == 10    # one 10-minute mindful session
     assert r["source"] == "apple_health_export"
 
 

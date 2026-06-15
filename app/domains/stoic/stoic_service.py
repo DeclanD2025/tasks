@@ -38,7 +38,7 @@ Stoic-practice data is captured later.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 import numpy as np
 
@@ -108,7 +108,8 @@ class StoicPractice:
     code: str
     done: bool
     streak: int                # consecutive days
-    tracked: bool = False      # whether a real check-in source backs this
+    tracked: bool = False      # whether a real source (Apple Health) backs this
+    detail: str = ""           # human-readable provenance, e.g. "9/14 days"
 
 
 @dataclass
@@ -322,25 +323,47 @@ def _virtue_note(score: float | None, high: str, low: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Daily practice — honestly untracked until a check-in source exists
+# Reflective practice — ingested from Apple Health Mindfulness (no double-entry)
 # --------------------------------------------------------------------------- #
-def _practices(user_id: int) -> tuple[list[StoicPractice], float | None, bool]:
-    """Stoic disciplines.
+# A day "counts" as a practice day if at least this many mindful minutes logged.
+PRACTICE_MIN_MINUTES = 3
 
-    There is no real check-in source yet, so we report every discipline as
-    untracked (done=False, streak=0, tracked=False) and consistency=None. This
-    is replaced wholesale once the daily check-in (Step 3) lands; we never invent
-    streaks.
+
+def _practices(user_id: int) -> tuple[list[StoicPractice], float | None, bool]:
+    """Reflective-practice signal, ingested rather than re-asked.
+
+    The Stoic app (and Mindfulness/Calm/etc.) write Mindfulness sessions to Apple
+    Health. We read those: a day with >= PRACTICE_MIN_MINUTES mindful minutes is
+    a practice day. This avoids any double-entry — ORION never re-asks you to log
+    a ritual you already did in Stoic. If there is no mindful data, practice is
+    honestly untracked.
     """
-    specs = [
-        ("Morning Premeditation", "STO-AM"),
-        ("Evening Review", "STO-PM"),
-        ("View From Above", "STO-VFA"),
-        ("Negative Visualisation", "STO-NV"),
-        ("Voluntary Discomfort", "STO-VD"),
-    ]
-    practices = [StoicPractice(label, code, False, 0, tracked=False) for label, code in specs]
-    return practices, None, False
+    pf = services.practice_frame(user_id, days=30)
+    if pf.empty:
+        return ([StoicPractice("Reflective Practice", "STO-PRA", False, 0, tracked=False)], None,
+                False)
+
+    by_day = {row["day"]: float(row["mindful_minutes"]) for _, row in pf.iterrows()}
+    today = date.today()
+    # Current streak: consecutive days up to today meeting the threshold.
+    streak = 0
+    d = today
+    while by_day.get(d, 0.0) >= PRACTICE_MIN_MINUTES:
+        streak += 1
+        d = d - timedelta(days=1)
+    # Consistency: share of the last 14 days with a qualifying session.
+    last14 = [today - timedelta(days=i) for i in range(14)]
+    hits = sum(1 for day in last14 if by_day.get(day, 0.0) >= PRACTICE_MIN_MINUTES)
+    consistency = hits / 14
+    done_today = by_day.get(today, 0.0) >= PRACTICE_MIN_MINUTES
+
+    total_min = sum(by_day.values())
+    practice = StoicPractice(
+        "Reflective Practice", "STO-PRA", done_today, streak, tracked=True,
+    )
+    # Stash a readable detail on the object via attributes the UI can show.
+    practice.detail = f"{hits}/14 days · {total_min:.0f} mindful min (Apple Health)"
+    return [practice], consistency, True
 
 
 # --------------------------------------------------------------------------- #

@@ -33,6 +33,10 @@ HRV = "HKQuantityTypeIdentifierHeartRateVariabilitySDNN"
 RHR = "HKQuantityTypeIdentifierRestingHeartRate"
 WEIGHT = "HKQuantityTypeIdentifierBodyMass"
 SLEEP = "HKCategoryTypeIdentifierSleepAnalysis"
+# Mindfulness sessions — the Stoic app (and Mindfulness, Calm, etc.) write these
+# to Apple Health. Their presence is our no-double-entry evidence that a
+# reflective practice session happened that day.
+MINDFUL = "HKCategoryTypeIdentifierMindfulSession"
 # "Asleep" sleep states (Apple split core/deep/REM in newer exports).
 _ASLEEP_VALUES = {
     "HKCategoryValueSleepAnalysisAsleep",
@@ -50,6 +54,7 @@ class _DayAgg:
     weight: list[tuple[datetime, float]] = field(default_factory=list)
     sleep_seconds: float = 0.0
     mood: list[float] = field(default_factory=list)
+    mindful_seconds: float = 0.0
 
 
 def _parse_dt(value: str) -> datetime | None:
@@ -101,6 +106,7 @@ def parse_export(
             "weight_kg": round(agg.weight[-1][1], 1) if agg.weight else None,
             "sleep_minutes": round(agg.sleep_seconds / 60) if agg.sleep_seconds else None,
             "mood": round(_mean(agg.mood), 3) if agg.mood else None,
+            "mindful_minutes": round(agg.mindful_seconds / 60) if agg.mindful_seconds else None,
             "source": "apple_health_export",
         })
 
@@ -112,7 +118,7 @@ def parse_export(
 
 def _handle_record(elem, days: dict[date, _DayAgg]) -> None:
     rtype = elem.get("type")
-    if rtype not in (HRV, RHR, WEIGHT, SLEEP):
+    if rtype not in (HRV, RHR, WEIGHT, SLEEP, MINDFUL):
         return
     start = _parse_dt(elem.get("startDate", ""))
     if start is None:
@@ -124,6 +130,12 @@ def _handle_record(elem, days: dict[date, _DayAgg]) -> None:
             end = _parse_dt(elem.get("endDate", ""))
             if end:
                 days[day].sleep_seconds += (end - start).total_seconds()
+        return
+
+    if rtype == MINDFUL:
+        end = _parse_dt(elem.get("endDate", ""))
+        if end:
+            days[day].mindful_seconds += (end - start).total_seconds()
         return
 
     val = _to_float(elem.get("value"))

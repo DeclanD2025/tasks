@@ -605,11 +605,18 @@ class StoicPage(_ScrollPage):
 
         prac_status = f"{snap.practice_consistency * 100:.0f}%" \
             if snap.practice_tracked and snap.practice_consistency is not None else "UNTRACKED"
-        prac = HudPanel("Daily Practice", "STO-PRC", status=prac_status)
-        if not snap.practice_tracked:
+        prac = HudPanel("Reflective Practice", "STO-PRC", status=prac_status)
+        if snap.practice_tracked:
+            src = QLabel("Ingested from Apple Health Mindfulness — including your Stoic "
+                         "sessions. ORION never asks you to log a ritual twice.")
+            src.setObjectName("Faint")
+            src.setWordWrap(True)
+            prac.body.addWidget(src)
+        else:
             untracked = QLabel(
-                "No check-in source yet — streaks are not invented. The daily check-in "
-                "(planned) will record these honestly."
+                "No mindful-session data yet. Log sessions in the Stoic app (they write to "
+                "Apple Health Mindfulness), then import your Health export — ORION reads "
+                "those rather than re-asking. Streaks are never invented."
             )
             untracked.setObjectName("Faint")
             untracked.setWordWrap(True)
@@ -624,15 +631,19 @@ class StoicPage(_ScrollPage):
                 f"color:{PALETTE.positive if pr.done else PALETTE.text_faint}; font-size:13px;"
             )
             mark.setFixedWidth(18)
+            text = QVBoxLayout()
+            text.setSpacing(0)
             name = QLabel(pr.label.upper())
             name.setObjectName("PanelTitle")
-            code = QLabel(pr.code)
-            code.setObjectName("ModuleCode")
-            streak = QLabel(f"{pr.streak}d streak" if pr.tracked and pr.done else "untracked")
+            text.addWidget(name)
+            if pr.detail:
+                detail = QLabel(pr.detail)
+                detail.setObjectName("Mono")
+                text.addWidget(detail)
+            streak = QLabel(f"{pr.streak}d streak" if pr.tracked else "untracked")
             streak.setObjectName("Mono")
             rl.addWidget(mark)
-            rl.addWidget(name, 1)
-            rl.addWidget(code)
+            rl.addLayout(text, 1)
             rl.addWidget(streak)
             prac.body.addWidget(r)
         g2.addWidget(prac, 0, 1)

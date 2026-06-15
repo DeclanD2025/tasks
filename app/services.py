@@ -209,6 +209,28 @@ def mood_frame(user_id: int, days: int = 30) -> pd.DataFrame:
     return pd.DataFrame(records, columns=["day", "mood"]).sort_values("day")
 
 
+def practice_frame(user_id: int, days: int = 30) -> pd.DataFrame:
+    """Daily mindful minutes, read from HealthMetricDaily.extra['mindful_minutes'].
+
+    Sourced from Apple Health Mindfulness sessions — which the Stoic app (and
+    Mindfulness/Calm/etc.) write. Their presence is our no-double-entry evidence
+    that a reflective practice happened that day. Empty frame => no signal yet.
+    """
+    since = date.today() - timedelta(days=days)
+    with session_scope() as s:
+        rows = s.execute(
+            select(HealthMetricDaily.day, HealthMetricDaily.extra)
+            .where(HealthMetricDaily.user_id == user_id)
+            .where(HealthMetricDaily.day >= since)
+        ).all()
+    records = [
+        {"day": day, "mindful_minutes": (extra or {}).get("mindful_minutes")}
+        for day, extra in rows
+        if (extra or {}).get("mindful_minutes") is not None
+    ]
+    return pd.DataFrame(records, columns=["day", "mindful_minutes"]).sort_values("day")
+
+
 def activity_frame(user_id: int, days: int = 30) -> pd.DataFrame:
     since = date.today() - timedelta(days=days)
     with session_scope() as s:
