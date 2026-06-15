@@ -996,8 +996,12 @@ class InsightsPage(_ScrollPage):
 class SettingsPage(_ScrollPage):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.refresh()
+
+    def refresh(self) -> None:
         from app.ingestion import iter_connectors
 
+        self.clear()
         sources = GlassPanel()
         t = QLabel("Data Sources")
         t.setObjectName("PanelTitle")
@@ -1040,6 +1044,7 @@ class SettingsPage(_ScrollPage):
             sources.body.addLayout(row)
         self.col.addWidget(sources)
 
+        self.col.addWidget(self._health_auto_export_panel())
         self.col.addWidget(self._apple_health_panel())
 
         sec = GlassPanel()
@@ -1055,6 +1060,105 @@ class SettingsPage(_ScrollPage):
         sec.body.addWidget(st)
         sec.body.addWidget(body)
         self.col.addWidget(sec)
+
+    # --- Health Auto Export (auto-updating) ------------------------------- #
+    def _health_auto_export_panel(self) -> GlassPanel:
+        from app.ingestion import get_connector
+
+        panel = GlassPanel()
+        title = QLabel("Health Auto Export  ·  auto-updating")
+        title.setObjectName("PanelTitle")
+        panel.body.addWidget(title)
+
+        hae = get_connector("health_auto_export")
+        folder = hae.folder()
+        latest = hae.latest_file()
+        uid = services.get_default_user_id()
+        fresh = hae.latest_day(uid) if uid else None
+
+        if folder and latest:
+            status = QLabel(
+                f"LIVE · watching {folder}\n"
+                f"latest file: {latest.name}"
+                + (f"  ·  data through {fresh.isoformat()}" if fresh else "")
+            )
+            status.setObjectName("Muted")
+        else:
+            status = QLabel(
+                "Not configured. Point ORION at the folder Health Auto Export "
+                "writes to (e.g. an iCloud Drive folder). New files refresh "
+                "automatically on each sync — no manual export."
+            )
+            status.setObjectName("Faint")
+        status.setWordWrap(True)
+        panel.body.addWidget(status)
+
+        howto = QLabel(
+            "In Health Auto Export (iPhone): create an Automation → Export "
+            "format JSON → destination a folder in iCloud Drive → schedule daily. "
+            "Then choose that same iCloud folder here. ORION reads the newest "
+            "file each sync. Fully local once synced; no open ports."
+        )
+        howto.setObjectName("Faint")
+        howto.setWordWrap(True)
+        panel.body.addWidget(howto)
+
+        row = QHBoxLayout()
+        choose = QPushButton("CHOOSE FOLDER")
+        choose.setObjectName("GhostButton")
+        choose.clicked.connect(self._choose_hae_folder)
+        sync = QPushButton("SYNC NOW")
+        sync.setObjectName("GhostButton")
+        sync.clicked.connect(self._sync_hae)
+        row.addWidget(choose)
+        row.addWidget(sync)
+        row.addStretch(1)
+        wrap = QWidget()
+        wrap.setLayout(row)
+        panel.body.addWidget(wrap)
+        return panel
+
+    def _choose_hae_folder(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        from app.ingestion import get_connector
+
+        path = QFileDialog.getExistingDirectory(
+            self, "Select the Health Auto Export folder", ""
+        )
+        if not path:
+            return
+        get_connector("health_auto_export").set_folder(path)
+        self._sync_hae()
+
+    def _sync_hae(self) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        from app.db.database import session_scope
+        from app.ingestion import get_connector
+
+        hae = get_connector("health_auto_export")
+        uid = services.get_default_user_id()
+        rows = hae.fetch_raw_data()
+        if hae.is_mock:
+            QMessageBox.information(
+                self, "No export found",
+                "No Health Auto Export JSON found in that folder yet. Run an "
+                "export on your iPhone, let iCloud sync, then Sync Now.",
+            )
+            return
+        with session_scope() as s:
+            written = hae.store_normalised_data(s, uid, 0, rows)
+        QMessageBox.information(
+            self, "Health Auto Export synced",
+            f"Imported {written} days of real Apple Health data. Health, Fitness "
+            "and the Stoic observatory now reflect it.",
+        )
+        self.parent_refresh()
+
+    def parent_refresh(self) -> None:
+        # Rebuild this settings page to reflect new freshness.
+        self.refresh()
 
     # --- Apple Health import ---------------------------------------------- #
     def _apple_health_panel(self) -> GlassPanel:

@@ -7,6 +7,7 @@ from app.ingestion.base import Connector
 EXPECTED_KEYS = {
     "open_banking", "trading212", "coinbase", "moneybox", "apple_health",
     "activitywatch", "google_calendar", "notion", "football_manager",
+    "health_auto_export",
 }
 
 
@@ -17,7 +18,7 @@ def test_all_expected_connectors_registered():
 
 # Connectors that now query a real source (and fall back to mock when the
 # source is unavailable) rather than being mock-only.
-LIVE_CAPABLE = {"activitywatch", "apple_health"}
+LIVE_CAPABLE = {"activitywatch", "apple_health", "health_auto_export"}
 
 
 def test_connectors_implement_interface_and_emit_data():

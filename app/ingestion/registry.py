@@ -13,6 +13,7 @@ from app.integrations.apple_health.connector import AppleHealthConnector
 from app.integrations.coinbase.connector import CoinbaseConnector
 from app.integrations.football_manager.connector import FootballManagerConnector
 from app.integrations.google_calendar.connector import GoogleCalendarConnector
+from app.integrations.health_auto_export.connector import HealthAutoExportConnector
 from app.integrations.moneybox.connector import MoneyboxConnector
 from app.integrations.notion.connector import NotionConnector
 from app.integrations.open_banking.connector import OpenBankingConnector
@@ -23,6 +24,7 @@ _CONNECTOR_CLASSES: list[type[Connector]] = [
     Trading212Connector,
     CoinbaseConnector,
     MoneyboxConnector,
+    HealthAutoExportConnector,
     AppleHealthConnector,
     ActivityWatchConnector,
     GoogleCalendarConnector,
