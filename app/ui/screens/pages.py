@@ -175,48 +175,145 @@ class OverviewPage(_ScrollPage):
             return
 
         metrics = services.overview_metrics(self._user_id)
-        insights = services.latest_insights(self._user_id, limit=4)
-        self.col.addWidget(SystemHeader("Mission Overview", _nav_code("overview")))
-
+        insights = services.latest_insights(self._user_id, limit=5)
         core_metrics = [m for m in metrics if m.label != "Weekly Insight"]
+        nodes = self._domain_nodes()
+
+        self.col.addWidget(SystemHeader(
+            "Command Centre", _nav_code("overview"),
+            subtitle="ALL SYSTEMS · LIVE TELEMETRY",
+        ))
+
+        # Mission status banner — a row of console readouts, not metric cards.
+        self.col.addWidget(self._mission_banner(nodes, insights))
+
+        # Centre stage: the constellation dominates, flanked by a compact mono
+        # systems readout (left) and the live signal feed (right).
         main = QWidget()
         grid = QGridLayout(main)
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(16)
         grid.setVerticalSpacing(16)
         grid.setColumnStretch(0, 2)
-        grid.setColumnStretch(1, 5)
-        grid.setColumnStretch(2, 2)
+        grid.setColumnStretch(1, 6)
+        grid.setColumnStretch(2, 3)
 
-        left = _metric_panel("Core Metrics", "OVW-MET", core_metrics, limit=7)
-        left.setMinimumWidth(230)
-        grid.addWidget(left, 0, 0)
+        grid.addWidget(self._systems_readout(core_metrics), 0, 0)
 
-        constellation = HudPanel("Domain Constellation", "OVW-NET", status="ACTIVE")
-        constellation.body.addWidget(DomainConstellation(self._domain_nodes()), 1)
+        constellation = HudPanel("Life Domain Network", "OVW-NET", status="● TRACKING")
+        dc = DomainConstellation(nodes)
+        dc.setMinimumHeight(440)
+        constellation.body.addWidget(dc, 1)
         grid.addWidget(constellation, 0, 1)
 
-        feed = _feed_panel("Insight Feed", "INS-FEED", insights, status=f"{len(insights)} SIG")
+        feed = _feed_panel("Signal Feed", "OVW-SIG", insights, status=f"{len(insights)} ACTIVE")
         feed.setMinimumWidth(260)
         grid.addWidget(feed, 0, 2)
         self.col.addWidget(main)
 
-        trend_metrics = core_metrics[:4] or [Metric("System State", "NOMINAL", trend="flat")]
-        self.col.addWidget(
-            VitalsStrip(
-                "Trend Strip",
-                "OVW-TND",
-                [(f"TND-{i + 1:02d}", metric) for i, metric in enumerate(trend_metrics)],
-            )
-        )
+        # Bottom: a compact telemetry strip of live trajectories (not big cards).
+        self.col.addWidget(self._telemetry_strip())
 
-        nw = services.net_worth_series(self._user_id)
-        if not nw.empty:
-            self.col.addWidget(
-                _signal_panel(
-                    "Net Worth Trajectory", "FIN-LINK", nw["value"].tolist(), unit="GBP", height=120
-                )
-            )
+    # --- Overview HUD pieces ---------------------------------------------- #
+    def _mission_banner(self, nodes, insights) -> QWidget:
+        from datetime import datetime
+
+        panel = HudPanel("Mission Status", "OVW-STAT", status="NOMINAL")
+        row = QWidget()
+        hl = QHBoxLayout(row)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(0)
+
+        active = sum(1 for n in nodes if n.momentum >= 0.5)
+        alerts = sum(1 for i in insights if i["severity"] in ("warning", "critical"))
+        mean_mom = sum(n.momentum for n in nodes) / (len(nodes) or 1)
+        readouts = [
+            ("SYSTEM STATE", "OPERATIONAL", PALETTE.positive),
+            ("MODULES ONLINE", f"{active}/{len(nodes)}", PALETTE.accent),
+            ("NETWORK INTEGRITY", f"{mean_mom * 100:.0f}%", PALETTE.accent),
+            ("ACTIVE ALERTS", str(alerts), PALETTE.orange if alerts else PALETTE.text_dim),
+            ("UPLINK", "LOCAL ONLY", PALETTE.violet),
+            ("SESSION", datetime.now().strftime("%H:%M"), PALETTE.text_dim),
+        ]
+        for i, (lbl, val, col) in enumerate(readouts):
+            if i:
+                sep = QLabel("│")
+                sep.setStyleSheet(f"color:{PALETTE.border}; font-size:22px;")
+                hl.addWidget(sep)
+            cell = QVBoxLayout()
+            cell.setSpacing(1)
+            k = QLabel(lbl)
+            k.setObjectName("CardLabel")
+            v = QLabel(val)
+            v.setStyleSheet(f"color:{col}; font-family:{TYPE.mono}; font-size:{TYPE.h2}px;"
+                            " font-weight:700; letter-spacing:1px;")
+            cell.addWidget(k)
+            cell.addWidget(v)
+            wrap = QWidget()
+            wrap.setLayout(cell)
+            hl.addWidget(wrap, 1)
+        panel.body.addWidget(row)
+        return panel
+
+    def _systems_readout(self, core_metrics) -> HudPanel:
+        """A compact, mono, tick-style list — deliberately NOT metric cards."""
+        panel = HudPanel("Systems Readout", "OVW-SYS", status="LIVE")
+        for i, m in enumerate(core_metrics[:7]):
+            row = QWidget()
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 0, 0, 0)
+            rl.setSpacing(6)
+            tick = QLabel("▸")
+            tick.setStyleSheet(f"color:{PALETTE.accent_dim}; font-size:9px;")
+            name = QLabel(m.label.upper())
+            name.setObjectName("Mono")
+            val = QLabel(m.value)
+            val.setStyleSheet(f"color:{PALETTE.text}; font-family:{TYPE.mono};"
+                              f" font-size:{TYPE.small}px; font-weight:700;")
+            rl.addWidget(tick)
+            rl.addWidget(name)
+            rl.addStretch(1)
+            if m.delta:
+                arrow = {"up": "▲", "down": "▼", "flat": "■"}[m.trend]
+                d = QLabel(f"{arrow}{m.delta}")
+                d.setObjectName({"up": "DeltaUp", "down": "DeltaDown", "flat": "DeltaFlat"}[m.trend])
+                d.setStyleSheet(d.styleSheet() + f"font-size:{TYPE.nano}px;")
+                rl.addWidget(d)
+            rl.addWidget(val)
+            panel.body.addWidget(row)
+        return panel
+
+    def _telemetry_strip(self) -> QWidget:
+        panel = HudPanel("Telemetry", "OVW-TLM", status="STREAMING")
+        row = QWidget()
+        hl = QHBoxLayout(row)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(16)
+        streams = [
+            ("NET WORTH", services.net_worth_series(self._user_id).get("value"), PALETTE.accent, "£"),
+        ]
+        hf = services.health_frame(self._user_id)
+        af = services.activity_frame(self._user_id)
+        if not hf.empty:
+            streams.append(("HRV", hf["hrv_ms"].dropna(), PALETTE.violet, ""))
+        if not af.empty:
+            streams.append(("DEEP WORK", af["deep_work_minutes"].dropna(), PALETTE.positive, ""))
+            streams.append(("TRAINING LOAD", af["training_load"].dropna(), PALETTE.orange, ""))
+        for name, series, color, unit in streams:
+            if series is None or len(series) < 2:
+                continue
+            col = QVBoxLayout()
+            col.setSpacing(2)
+            head = QLabel(name)
+            head.setObjectName("Mono")
+            chart = SignalLineChart(list(series), color=color, unit=unit, height=88)
+            col.addWidget(head)
+            col.addWidget(chart)
+            cell = QWidget()
+            cell.setLayout(col)
+            hl.addWidget(cell, 1)
+        panel.body.addWidget(row)
+        return panel
 
     def _system_balance(self) -> list[float]:
         """Normalised 0..1 scores for the radar (deterministic heuristics)."""

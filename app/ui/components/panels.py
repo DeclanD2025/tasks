@@ -36,43 +36,55 @@ class TypingLabel(QLabel):
     cursor blinks while typing and for a moment after, then the text settles.
     """
 
-    def __init__(self, text: str, parent=None, *, style: str = "", interval_ms: int = 38):
+    def __init__(self, text: str, parent=None, *, style: str = "",
+                 interval_ms: int = 72, boot_delay_ms: int = 260):
         super().__init__(parent)
         self._full = text
+        self._interval = interval_ms
         self._n = 0
         self._cursor_on = True
         self._settle_ticks = 0
+        self._booting = True
         if style:
             self.setStyleSheet(style)
-        self.setText(" ")  # reserve height before typing starts
+        self.setText(" ")  # reserve height before typing starts
 
         self._type_timer = QTimer(self)
         self._type_timer.timeout.connect(self._tick)
-        self._type_timer.start(interval_ms)
         self._blink_timer = QTimer(self)
         self._blink_timer.timeout.connect(self._blink)
-        self._blink_timer.start(420)
+        self._blink_timer.start(360)
+        # Brief boot delay (blinking cursor only) before characters stream in —
+        # makes the heading feel like a module powering up, not a typewriter.
+        QTimer.singleShot(boot_delay_ms, self._begin)
+
+    def _begin(self):
+        self._booting = False
+        self._type_timer.start(self._interval)
 
     def _render(self):
-        cursor = "▌" if self._cursor_on else " "
-        self.setText(self._full[: self._n] + cursor)
+        cursor = "\u258c" if self._cursor_on else " "
+        shown = "" if self._booting else self._full[: self._n]
+        self.setText(shown + cursor)
 
     def _tick(self):
         if self._n < len(self._full):
             self._n += 1
             self._render()
+            # Micro-stall after a space, as if streaming the next token in.
+            nxt = self._interval * 3 if self._full[self._n - 1] == " " else self._interval
+            self._type_timer.start(nxt)
         else:
-            # Typed out; blink the cursor a few times then remove it.
+            # Typed out; let the cursor blink a while, then settle.
             self._settle_ticks += 1
-            if self._settle_ticks > 6:
+            if self._settle_ticks > 7:
                 self._type_timer.stop()
                 self._blink_timer.stop()
                 self.setText(self._full)
 
     def _blink(self):
         self._cursor_on = not self._cursor_on
-        if self._n <= len(self._full):
-            self._render()
+        self._render()
 
 
 # --------------------------------------------------------------------------- #

@@ -163,6 +163,37 @@ def build_stylesheet() -> str:
     }}
     QLineEdit:focus {{ border: 1px solid {p.accent}; }}
 
+    /* Spin box — match the HUD line inputs, no native chrome */
+    QSpinBox {{
+        background-color: {p.bg_panel_alt};
+        border: 1px solid {p.border};
+        border-radius: {r.inner}px;
+        padding: 6px 8px;
+        color: {p.text};
+        font-family: {TYPE.mono};
+        selection-background-color: {p.accent_dim};
+    }}
+    QSpinBox:focus {{ border: 1px solid {p.accent}; }}
+    QSpinBox::up-button, QSpinBox::down-button {{
+        subcontrol-origin: border;
+        width: 16px;
+        border-left: 1px solid {p.border};
+        background-color: {p.bg_elevated};
+    }}
+    QSpinBox::up-button {{ subcontrol-position: top right; border-bottom: 1px solid {p.border}; }}
+    QSpinBox::down-button {{ subcontrol-position: bottom right; }}
+    QSpinBox::up-button:hover, QSpinBox::down-button:hover {{ background-color: {p.border}; }}
+    QSpinBox::up-arrow {{
+        image: none; width: 0; height: 0;
+        border-left: 3px solid transparent; border-right: 3px solid transparent;
+        border-bottom: 4px solid {p.accent};
+    }}
+    QSpinBox::down-arrow {{
+        image: none; width: 0; height: 0;
+        border-left: 3px solid transparent; border-right: 3px solid transparent;
+        border-top: 4px solid {p.accent};
+    }}
+
     QPushButton#PrimaryButton {{
         background-color: {p.accent};
         color: #021016;

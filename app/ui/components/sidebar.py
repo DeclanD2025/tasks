@@ -52,21 +52,47 @@ class _NavButton(QPushButton):
         lay.setContentsMargins(10, 6, 10, 6)
         lay.setSpacing(9)
 
-        glyph = QLabel(item.icon)
-        glyph.setStyleSheet(f"color:{PALETTE.text_dim}; font-size:14px;")
-        lay.addWidget(glyph)
+        self._glyph = QLabel(item.icon)
+        self._glyph.setStyleSheet(f"color:{PALETTE.text_dim}; font-size:14px;")
+        lay.addWidget(self._glyph)
 
         # Module name only — codes were confusing in the rail (they still appear
-        # as the technical ID inside each module's header).
-        label = QLabel(item.label)
-        label.setStyleSheet(f"color:inherit; font-size:{TYPE.body}px;")
-        lay.addWidget(label)
+        # as the technical ID inside each module's header). Colour is driven
+        # explicitly from the checked state (QSS 'inherit' on a child QLabel is
+        # unreliable and was rendering the names near-black).
+        self._label = QLabel(item.label)
+        lay.addWidget(self._label)
         lay.addStretch(1)
 
         _, color = _STATUS.get(item.key, ("nominal", PALETTE.positive))
         dot = QLabel("●")
         dot.setStyleSheet(f"color:{color}; font-size:8px;")
         lay.addWidget(dot)
+
+        self.toggled.connect(self._sync_colors)
+        self._sync_colors(False)
+
+    def _sync_colors(self, checked: bool) -> None:
+        text = PALETTE.accent if checked else PALETTE.text_dim
+        glyph = PALETTE.accent if checked else PALETTE.text_dim
+        weight = 700 if checked else 500
+        self._label.setStyleSheet(
+            f"color:{text}; font-size:{TYPE.body}px; font-weight:{weight};"
+            " background:transparent;"
+        )
+        self._glyph.setStyleSheet(f"color:{glyph}; font-size:14px; background:transparent;")
+
+    def enterEvent(self, event):  # noqa: N802
+        if not self.isChecked():
+            self._label.setStyleSheet(
+                f"color:{PALETTE.text}; font-size:{TYPE.body}px; font-weight:500;"
+                " background:transparent;"
+            )
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):  # noqa: N802
+        self._sync_colors(self.isChecked())
+        super().leaveEvent(event)
 
 
 class Sidebar(QWidget):
