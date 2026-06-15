@@ -38,14 +38,18 @@ def test_mock_only_connectors_report_mock():
         assert c.is_mock is True
 
 
-def test_live_capable_connectors_fall_back_cleanly():
-    # Neither live source is configured in CI/dev: connect() is False, but each
-    # still emits a mock fallback with a 'source' tag and flags itself mock.
+def test_live_capable_connectors_emit_tagged_rows():
+    # Each live-capable connector always yields rows tagged with a 'source'.
+    # If a real source happens to be configured on this machine it'll be live
+    # (is_mock False); otherwise it falls back to mock cleanly. Either is valid —
+    # we only assert the contract: rows exist, are tagged, and is_mock matches
+    # availability.
     from app.ingestion import get_connector
 
     for key in LIVE_CAPABLE:
         c = get_connector(key)
-        c.connect()  # probes localhost:5600 / looks for export.xml
+        available = c.connect()
         rows = c.fetch_raw_data()
         assert rows and all("source" in r for r in rows), key
-        assert c.is_mock is True, key
+        # mock flag must be the inverse of a real source being present
+        assert c.is_mock == (not available), key

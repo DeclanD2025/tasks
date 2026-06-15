@@ -207,19 +207,51 @@ def parse_file(path: str | Path) -> list[dict]:
     return parse_payload(payload)
 
 
+def _ensure_downloaded(path: Path) -> None:
+    """Ask macOS to materialise an iCloud placeholder, if this file is one.
+
+    Files synced via iCloud Drive can exist only as ``.icloud`` stubs until
+    opened. ``brctl download`` (best-effort) pulls the real bytes down.
+    """
+    try:
+        import subprocess
+
+        subprocess.run(["brctl", "download", str(path)], capture_output=True, timeout=20)
+    except Exception:
+        pass
+
+
 def recent_export_files(folder: str | Path, *, max_files: int = 12) -> list[Path]:
     """Return the most recently modified .json exports in ``folder`` (recursive).
 
     HAE writes a separate file per category (Health Metrics, State of Mind, …)
     and a new file each run, so we take the newest handful and merge them.
+    Also resolves iCloud placeholder stubs (``.icloud``) to their real files and
+    triggers a download so a partially-synced folder still reads fully.
     """
     folder = Path(folder)
     if not folder.exists():
         return []
-    candidates = sorted(
-        folder.rglob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
-    )
-    return candidates[:max_files]
+
+    # Resolve iCloud placeholder stubs: ".<name>.json.icloud" -> "<name>.json".
+    resolved: dict[Path, float] = {}
+    for p in folder.rglob("*"):
+        if p.suffix == ".json":
+            resolved[p] = p.stat().st_mtime
+        elif p.suffix == ".icloud" and p.name.endswith(".json.icloud"):
+            real = p.with_name(p.name[1:-len(".icloud")])  # strip leading '.' + '.icloud'
+            _ensure_downloaded(real)
+            if real.exists():
+                resolved[real] = real.stat().st_mtime
+            else:
+                resolved.setdefault(real, p.stat().st_mtime)
+
+    candidates = sorted(resolved, key=lambda p: resolved[p], reverse=True)
+    # Make sure the ones we'll actually read are materialised.
+    for p in candidates[:max_files]:
+        if not p.exists() or p.stat().st_size == 0:
+            _ensure_downloaded(p)
+    return [p for p in candidates[:max_files] if p.exists() and p.stat().st_size > 0]
 
 
 def latest_export_file(folder: str | Path) -> Path | None:

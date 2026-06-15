@@ -1047,6 +1047,25 @@ class SettingsPage(_ScrollPage):
         self.col.addWidget(self._health_auto_export_panel())
         self.col.addWidget(self._apple_health_panel())
 
+        # Real-data hygiene: purge the mock seed across every module.
+        purge = GlassPanel()
+        pt = QLabel("Real Data")
+        pt.setObjectName("PanelTitle")
+        pbody = QLabel(
+            "ORION ships with mock demo data so the UI isn't empty. Once your real "
+            "sources are connected, purge the mock data so every tab shows only "
+            "genuine, sourced figures — sparse at first, filling in as you sync."
+        )
+        pbody.setObjectName("Muted")
+        pbody.setWordWrap(True)
+        purge.body.addWidget(pt)
+        purge.body.addWidget(pbody)
+        btn = QPushButton("PURGE MOCK DATA · KEEP REAL")
+        btn.setObjectName("GhostButton")
+        btn.clicked.connect(self._purge_mock)
+        purge.body.addWidget(btn)
+        self.col.addWidget(purge)
+
         sec = GlassPanel()
         st = QLabel("Security & Storage")
         st.setObjectName("PanelTitle")
@@ -1060,6 +1079,34 @@ class SettingsPage(_ScrollPage):
         sec.body.addWidget(st)
         sec.body.addWidget(body)
         self.col.addWidget(sec)
+
+    def _purge_mock(self) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        from app.analytics import generate_insights
+        from app.db.purge import purge_mock_data, sync_real_sources
+
+        confirm = QMessageBox.question(
+            self, "Purge mock data?",
+            "This deletes all demo data across every module (finance, health, "
+            "activity, projects, insights, planned sessions). Real sources will "
+            "then repopulate on sync. Continue?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        uid = services.get_default_user_id()
+        purge_mock_data(uid)
+        written = sync_real_sources(uid)
+        generate_insights(uid)
+        total = sum(written.values())
+        detail = ", ".join(f"{k}:{v}" for k, v in written.items()) or "none yet"
+        QMessageBox.information(
+            self, "Mock data purged",
+            f"All mock data removed. Real data synced: {total} rows ({detail}).\n"
+            "Reopen the other tabs to see real-only figures.",
+        )
+        self.parent_refresh()
 
     # --- Health Auto Export (auto-updating) ------------------------------- #
     def _health_auto_export_panel(self) -> GlassPanel:
