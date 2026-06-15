@@ -17,7 +17,7 @@ def test_all_expected_connectors_registered():
 
 # Connectors that now query a real source (and fall back to mock when the
 # source is unavailable) rather than being mock-only.
-LIVE_CAPABLE = {"activitywatch"}
+LIVE_CAPABLE = {"activitywatch", "apple_health"}
 
 
 def test_connectors_implement_interface_and_emit_data():
@@ -37,12 +37,14 @@ def test_mock_only_connectors_report_mock():
         assert c.is_mock is True
 
 
-def test_live_capable_connector_falls_back_cleanly():
-    # ActivityWatch isn't running in CI/dev: connect() is False, but it still
-    # emits a mock fallback and flags itself as mock.
+def test_live_capable_connectors_fall_back_cleanly():
+    # Neither live source is configured in CI/dev: connect() is False, but each
+    # still emits a mock fallback with a 'source' tag and flags itself mock.
     from app.ingestion import get_connector
 
-    aw = get_connector("activitywatch")
-    aw.connect()  # probes localhost:5600; expected unavailable here
-    rows = aw.fetch_raw_data()
-    assert rows and all("source" in r for r in rows)
+    for key in LIVE_CAPABLE:
+        c = get_connector(key)
+        c.connect()  # probes localhost:5600 / looks for export.xml
+        rows = c.fetch_raw_data()
+        assert rows and all("source" in r for r in rows), key
+        assert c.is_mock is True, key

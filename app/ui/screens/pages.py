@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -766,7 +767,11 @@ class SettingsPage(_ScrollPage):
             name = QLabel(c.name)
             hint = QLabel("")
             if hasattr(c, "available") and not live:
-                hint = QLabel("start ActivityWatch on :5600 to go live")
+                hints = {
+                    "activitywatch": "start ActivityWatch on :5600 to go live",
+                    "apple_health": "import an export.xml below to go live",
+                }
+                hint = QLabel(hints.get(c.key, "no live source configured"))
                 hint.setObjectName("Mono")
             status = QLabel(label)
             status.setObjectName("Pill")
@@ -778,6 +783,8 @@ class SettingsPage(_ScrollPage):
             row.addWidget(status)
             sources.body.addLayout(row)
         self.col.addWidget(sources)
+
+        self.col.addWidget(self._apple_health_panel())
 
         sec = GlassPanel()
         st = QLabel("Security & Storage")
@@ -792,3 +799,72 @@ class SettingsPage(_ScrollPage):
         sec.body.addWidget(st)
         sec.body.addWidget(body)
         self.col.addWidget(sec)
+
+    # --- Apple Health import ---------------------------------------------- #
+    def _apple_health_panel(self) -> GlassPanel:
+        from app.ingestion import get_connector
+
+        panel = GlassPanel()
+        title = QLabel("Apple Health")
+        title.setObjectName("PanelTitle")
+        panel.body.addWidget(title)
+
+        aw = get_connector("apple_health")
+        current = aw.export_path()
+        status = QLabel(
+            f"LIVE · {current.name}" if current else
+            "No export imported yet — mood, HRV, sleep and resting HR are mock."
+        )
+        status.setObjectName("Muted" if current else "Faint")
+        status.setWordWrap(True)
+        panel.body.addWidget(status)
+
+        howto = QLabel(
+            "On iPhone: Health app → profile → Export All Health Data → unzip → "
+            "import the export.xml here. Parsed locally; mood comes from your "
+            "State of Mind logs (iOS 17+). Nothing leaves this machine."
+        )
+        howto.setObjectName("Faint")
+        howto.setWordWrap(True)
+        panel.body.addWidget(howto)
+
+        btn = QPushButton("IMPORT EXPORT.XML")
+        btn.setObjectName("GhostButton")
+        btn.clicked.connect(self._import_apple_health)
+        panel.body.addWidget(btn)
+        return panel
+
+    def _import_apple_health(self) -> None:
+        import shutil
+
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+        from app.core.config import get_settings
+        from app.ingestion import get_connector
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Apple Health export.xml", "", "Health export (*.xml)"
+        )
+        if not path:
+            return
+        dest_dir = get_settings().data_dir / "apple_health"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / "export.xml"
+        try:
+            shutil.copyfile(path, dest)
+            # Parse + persist immediately so the change is visible now.
+            aw = get_connector("apple_health")
+            rows = aw.fetch_raw_data()
+            from app.db.database import session_scope
+            from app.services import get_default_user_id
+
+            uid = get_default_user_id()
+            with session_scope() as s:
+                written = aw.store_normalised_data(s, uid, 0, rows)
+            QMessageBox.information(
+                self, "Apple Health imported",
+                f"Imported {written} days. Sync/reopen the Stoic tab to see live "
+                "HRV, sleep, resting HR and mood.",
+            )
+        except Exception as exc:  # surface, don't crash
+            QMessageBox.warning(self, "Import failed", str(exc))

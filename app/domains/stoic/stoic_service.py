@@ -188,10 +188,11 @@ def _score_from_factors(factors: list[Factor]) -> tuple[float | None, float]:
 
 
 # --------------------------------------------------------------------------- #
-# Equanimity (ataraxia) — REAL: HRV + sleep regularity
+# Equanimity (ataraxia) — REAL: HRV + sleep regularity + mood (Apple Health)
 # --------------------------------------------------------------------------- #
 def _equanimity(user_id: int) -> tuple[Signal, list[float]]:
     hf = services.health_frame(user_id)
+    mf = services.mood_frame(user_id)
     factors: list[Factor] = []
     trend: list[float] = []
 
@@ -199,19 +200,29 @@ def _equanimity(user_id: int) -> tuple[Signal, list[float]]:
     if hrv is not None and not hrv.empty:
         mean_hrv = float(hrv.tail(7).mean())
         hrv_unit = _clamp((mean_hrv - 30) / 50)
-        factors.append(Factor("HRV (7d)", f"{mean_hrv:.0f} ms", hrv_unit * 0.6, 0.6, True))
+        factors.append(Factor("HRV (7d)", f"{mean_hrv:.0f} ms", hrv_unit * 0.45, 0.45, True))
         roll = hrv.rolling(3, min_periods=1).mean()
         trend = [_clamp((v - 30) / 50) for v in roll.tail(14)]
     else:
-        factors.append(Factor("HRV (7d)", "no source", 0.0, 0.6, False))
+        factors.append(Factor("HRV (7d)", "no source", 0.0, 0.45, False))
 
     sleep = hf["sleep_minutes"].dropna() if not hf.empty else None
     if sleep is not None and len(sleep) >= 4:
         cv = sleep.tail(14).std() / (sleep.tail(14).mean() or 1)
         reg = _clamp(1.0 - cv * 2.5)
-        factors.append(Factor("Sleep regularity", f"CV {cv:.0%}", reg * 0.4, 0.4, True))
+        factors.append(Factor("Sleep regularity", f"CV {cv:.0%}", reg * 0.30, 0.30, True))
     else:
-        factors.append(Factor("Sleep regularity", "no source", 0.0, 0.4, False))
+        factors.append(Factor("Sleep regularity", "no source", 0.0, 0.30, False))
+
+    # Mood: Apple Health State of Mind valence [-1,1] -> [0,1]. Inferred, not
+    # self-reported in ORION.
+    if not mf.empty:
+        mean_mood = float(mf["mood"].tail(7).mean())
+        mood_unit = _clamp((mean_mood + 1) / 2)
+        factors.append(Factor("Mood (Apple Health)", f"valence {mean_mood:+.2f}",
+                              mood_unit * 0.25, 0.25, True))
+    else:
+        factors.append(Factor("Mood (Apple Health)", "no State of Mind data", 0.0, 0.25, False))
 
     score, coverage = _score_from_factors(factors)
     value = (score / 100.0) if score is not None else None

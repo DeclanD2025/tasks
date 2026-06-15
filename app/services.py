@@ -188,6 +188,27 @@ def health_frame(user_id: int, days: int = 30) -> pd.DataFrame:
     ).sort_values("day")
 
 
+def mood_frame(user_id: int, days: int = 30) -> pd.DataFrame:
+    """Daily mood valence in [-1, 1], read from HealthMetricDaily.extra['mood'].
+
+    Sourced from Apple Health 'State of Mind' logs (iOS 17+). Days without a
+    mood entry are omitted, so an empty frame means 'no mood signal yet'.
+    """
+    since = date.today() - timedelta(days=days)
+    with session_scope() as s:
+        rows = s.execute(
+            select(HealthMetricDaily.day, HealthMetricDaily.extra)
+            .where(HealthMetricDaily.user_id == user_id)
+            .where(HealthMetricDaily.day >= since)
+        ).all()
+    records = [
+        {"day": day, "mood": (extra or {}).get("mood")}
+        for day, extra in rows
+        if (extra or {}).get("mood") is not None
+    ]
+    return pd.DataFrame(records, columns=["day", "mood"]).sort_values("day")
+
+
 def activity_frame(user_id: int, days: int = 30) -> pd.DataFrame:
     since = date.today() - timedelta(days=days)
     with session_scope() as s:
