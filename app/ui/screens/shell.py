@@ -20,6 +20,7 @@ from app.ui.components.sidebar import Sidebar
 from app.ui.components.topbar import TopBar
 from app.ui.navigation import NAV_ITEMS
 from app.ui.screens.pages import (
+    FitnessPage,
     InsightsPage,
     ModulePage,
     OverviewPage,
@@ -68,6 +69,7 @@ class AppShell(QWidget):
         self._register("settings", SettingsPage())
         self._stoic = StoicPage(self._user_id)
         self._register("stoic", self._stoic)
+        self._register("fitness", FitnessPage(self._user_id))
         for item in NAV_ITEMS:
             if item.key in self._pages:
                 continue

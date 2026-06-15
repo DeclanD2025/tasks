@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
 )
 
 from app import services
+from app.domains.fitness import fitness_service as fitness
+from app.domains.fitness.fitness_widgets import MonthCalendar, SessionTile
 from app.domains.health.health_service import get_health_dashboard_snapshot
 from app.domains.stoic.stoic_service import get_stoic_snapshot
 from app.domains.stoic.stoic_widgets import (
@@ -717,6 +719,152 @@ class StoicPage(_ScrollPage):
             note.setWordWrap(True)
             bl.addWidget(note)
             panel.body.addWidget(block)
+        return panel
+
+
+# --------------------------------------------------------------------------- #
+# Fitness page — editable training block + drag-and-drop month calendar
+# --------------------------------------------------------------------------- #
+class FitnessPage(_ScrollPage):
+    def __init__(self, user_id: int | None, parent=None):
+        super().__init__(parent)
+        self._user_id = user_id
+        self.refresh()
+
+    def refresh(self) -> None:
+        self.clear()
+        if self._user_id is None:
+            self.add_placeholder_note("No data yet. Run the seeder: python -m app.db.seed")
+            return
+
+        plan = fitness.get_or_create_plan(self._user_id)
+        self.col.addWidget(
+            SystemHeader(
+                "Fitness", _nav_code("fitness"),
+                subtitle=f"{plan.block_name.upper()} · {plan.week_label}",
+                sync_label=plan.week_label, database_label="PLAN LOCAL",
+            )
+        )
+
+        # Inferred-metrics strip (Apple Health). Strength omitted on purpose.
+        self.col.addWidget(self._metrics_strip())
+
+        # Editable training-block header.
+        self.col.addWidget(self._block_panel(plan))
+
+        # Palette + calendar, side by side.
+        body = QWidget()
+        hl = QHBoxLayout(body)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(16)
+        hl.addWidget(self._palette_panel(), 0)
+
+        cal_panel = HudPanel("Training Calendar", "FIT-CAL", status="DRAG TO PLAN")
+        self._calendar = MonthCalendar(self._user_id)
+        self._calendar.changed.connect(self._on_calendar_changed)
+        cal_panel.body.addWidget(self._calendar)
+        hl.addWidget(cal_panel, 1)
+        self.col.addWidget(body)
+
+    def _on_calendar_changed(self) -> None:
+        # Sessions persist inside the widget; nothing else to refresh for now.
+        pass
+
+    def _metrics_strip(self) -> QWidget:
+        fr = fitness.fitness_frame(self._user_id)
+        dist7 = fr["distance_km"].dropna().tail(7).sum() if not fr.empty else 0.0
+        dist30 = fr["distance_km"].dropna().sum() if not fr.empty else 0.0
+        vo2 = fr["vo2max"].dropna()
+        rhr = fr["resting_hr"].dropna()
+        runs = int((fr["distance_km"].fillna(0) > 0).sum()) if not fr.empty else 0
+        cells = [
+            ("FIT-D7", Metric("Distance · 7d", f"{dist7:.1f} km", trend="flat",
+                              series=fr["distance_km"].fillna(0).tolist() if not fr.empty else None)),
+            ("FIT-D30", Metric("Distance · 30d", f"{dist30:.1f} km", trend="flat")),
+            ("FIT-VO2", Metric("VO₂ Max", f"{vo2.iloc[-1]:.1f}" if not vo2.empty else "—",
+                               trend="up", series=vo2.tolist() if not vo2.empty else None)),
+            ("FIT-RHR", Metric("Resting HR", f"{rhr.iloc[-1]:.0f} bpm" if not rhr.empty else "—",
+                               trend="flat")),
+            ("FIT-RUN", Metric("Runs · 30d", str(runs), trend="flat")),
+        ]
+        return VitalsStrip("Inferred · Apple Health", "FIT-AH", cells)
+
+    def _block_panel(self, plan) -> HudPanel:
+        from PySide6.QtWidgets import QLineEdit, QSpinBox
+
+        panel = HudPanel("Training Block", "FIT-BLK", status=plan.week_label)
+        row = QWidget()
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(0, 0, 0, 0)
+        rl.setSpacing(12)
+
+        name_col = QVBoxLayout()
+        name_col.setSpacing(2)
+        name_lbl = QLabel("BLOCK NAME")
+        name_lbl.setObjectName("CardLabel")
+        name_edit = QLineEdit(plan.block_name)
+        name_edit.setMinimumWidth(260)
+        name_edit.editingFinished.connect(
+            lambda: self._save_plan(plan.id, name=name_edit.text())
+        )
+        name_col.addWidget(name_lbl)
+        name_col.addWidget(name_edit)
+        rl.addLayout(name_col)
+
+        start_col = QVBoxLayout()
+        start_col.setSpacing(2)
+        start_lbl = QLabel("START (YYYY-MM-DD)")
+        start_lbl.setObjectName("CardLabel")
+        start_edit = QLineEdit(plan.start_date.isoformat())
+        start_edit.setMaximumWidth(130)
+        start_edit.editingFinished.connect(
+            lambda: self._save_plan(plan.id, start=start_edit.text())
+        )
+        start_col.addWidget(start_lbl)
+        start_col.addWidget(start_edit)
+        rl.addLayout(start_col)
+
+        weeks_col = QVBoxLayout()
+        weeks_col.setSpacing(2)
+        weeks_lbl = QLabel("WEEKS")
+        weeks_lbl.setObjectName("CardLabel")
+        weeks_spin = QSpinBox()
+        weeks_spin.setRange(1, 52)
+        weeks_spin.setValue(plan.weeks)
+        weeks_spin.valueChanged.connect(
+            lambda v: self._save_plan(plan.id, weeks=v)
+        )
+        weeks_col.addWidget(weeks_lbl)
+        weeks_col.addWidget(weeks_spin)
+        rl.addLayout(weeks_col)
+        rl.addStretch(1)
+
+        panel.body.addWidget(row)
+        return panel
+
+    def _save_plan(self, plan_id: int, *, name=None, start=None, weeks=None) -> None:
+        from datetime import date as _date
+
+        start_date = None
+        if start:
+            try:
+                start_date = _date.fromisoformat(start)
+            except ValueError:
+                start_date = None
+        fitness.update_plan(plan_id, block_name=name, start_date=start_date, weeks=weeks)
+        self.refresh()
+
+    def _palette_panel(self) -> HudPanel:
+        panel = HudPanel("Session Palette", "FIT-PAL", status="DRAG →")
+        panel.setMaximumWidth(230)
+        hint = QLabel("Drag a session onto a day. Drag placed sessions to move; "
+                      "click one to remove.")
+        hint.setObjectName("Faint")
+        hint.setWordWrap(True)
+        panel.body.addWidget(hint)
+        for stype, color in fitness.SESSION_TYPES:
+            panel.body.addWidget(SessionTile(stype, color))
+        panel.body.addStretch(1)
         return panel
 
 

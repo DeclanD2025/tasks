@@ -37,6 +37,8 @@ SLEEP = "HKCategoryTypeIdentifierSleepAnalysis"
 # to Apple Health. Their presence is our no-double-entry evidence that a
 # reflective practice session happened that day.
 MINDFUL = "HKCategoryTypeIdentifierMindfulSession"
+DISTANCE = "HKQuantityTypeIdentifierDistanceWalkingRunning"  # km (summed/day)
+VO2MAX = "HKQuantityTypeIdentifierVO2Max"                    # mL/kg/min (latest)
 # "Asleep" sleep states (Apple split core/deep/REM in newer exports).
 _ASLEEP_VALUES = {
     "HKCategoryValueSleepAnalysisAsleep",
@@ -55,6 +57,8 @@ class _DayAgg:
     sleep_seconds: float = 0.0
     mood: list[float] = field(default_factory=list)
     mindful_seconds: float = 0.0
+    distance_km: float = 0.0
+    vo2max: list[tuple[datetime, float]] = field(default_factory=list)
 
 
 def _parse_dt(value: str) -> datetime | None:
@@ -107,6 +111,8 @@ def parse_export(
             "sleep_minutes": round(agg.sleep_seconds / 60) if agg.sleep_seconds else None,
             "mood": round(_mean(agg.mood), 3) if agg.mood else None,
             "mindful_minutes": round(agg.mindful_seconds / 60) if agg.mindful_seconds else None,
+            "distance_km": round(agg.distance_km, 2) if agg.distance_km else None,
+            "vo2max": round(agg.vo2max[-1][1], 1) if agg.vo2max else None,
             "source": "apple_health_export",
         })
 
@@ -118,7 +124,7 @@ def parse_export(
 
 def _handle_record(elem, days: dict[date, _DayAgg]) -> None:
     rtype = elem.get("type")
-    if rtype not in (HRV, RHR, WEIGHT, SLEEP, MINDFUL):
+    if rtype not in (HRV, RHR, WEIGHT, SLEEP, MINDFUL, DISTANCE, VO2MAX):
         return
     start = _parse_dt(elem.get("startDate", ""))
     if start is None:
@@ -147,6 +153,10 @@ def _handle_record(elem, days: dict[date, _DayAgg]) -> None:
         days[day].rhr.append(val)
     elif rtype == WEIGHT:
         days[day].weight.append((start, val))
+    elif rtype == DISTANCE:
+        days[day].distance_km += val          # already km
+    elif rtype == VO2MAX:
+        days[day].vo2max.append((start, val))
 
 
 def _handle_state_of_mind(elem, days: dict[date, _DayAgg]) -> None:

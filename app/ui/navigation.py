@@ -18,6 +18,7 @@ NAV_ITEMS: list[NavItem] = [
     NavItem("overview", "Overview", "◎", "OVW-00", "Mission status across all systems"),
     NavItem("finance", "Finance", "▤", "FIN-01", "Accounts, balances and spending"),
     NavItem("health", "Health", "✛", "HLT-02", "Sleep, HRV and recovery"),
+    NavItem("fitness", "Fitness", "▲", "FIT-02B", "Training block and sessions"),
     NavItem("productivity", "Productivity", "▣", "PRD-03", "Deep work and focus"),
     NavItem("creative", "Creative", "✦", "CRV-04", "Writing and creative output"),
     NavItem("calendar", "Calendar", "▦", "CAL-05", "Schedule load and commitments"),

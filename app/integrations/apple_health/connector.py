@@ -90,12 +90,12 @@ class AppleHealthConnector(Connector):
             for col in ("sleep_minutes", "hrv_ms", "resting_hr", "weight_kg"):
                 if r.get(col) is not None:
                     setattr(row, col, r[col])
-            if r.get("mood") is not None or r.get("mindful_minutes") is not None:
+            json_keys = ("mood", "mindful_minutes", "distance_km", "vo2max")
+            if any(r.get(k) is not None for k in json_keys):
                 extra = dict(row.extra or {})
-                if r.get("mood") is not None:
-                    extra["mood"] = r["mood"]
-                if r.get("mindful_minutes") is not None:
-                    extra["mindful_minutes"] = r["mindful_minutes"]
+                for k in json_keys:
+                    if r.get(k) is not None:
+                        extra[k] = r[k]
                 row.extra = extra
             written += 1
         session.flush()
@@ -115,6 +115,9 @@ class AppleHealthConnector(Connector):
                 "mood": round(random.uniform(-0.2, 0.6), 3),
                 # Mock a Stoic-like practice cadence: most days a short session.
                 "mindful_minutes": random.choice([0, 0, 8, 10, 12, 15]),
+                # Running distance: some days a run, some rest.
+                "distance_km": random.choice([0, 0, 5.0, 8.2, 10.5, 6.4, 12.0]),
+                "vo2max": round(random.uniform(48.0, 54.0), 1),
                 "source": "apple_health_mock",
             })
         return out

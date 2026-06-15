@@ -108,10 +108,9 @@ def _seed_finance(s, user_id: int, source_ids: dict[str, int]) -> None:
 def _seed_health(s, user_id: int) -> None:
     for row in get_connector("apple_health").fetch_raw_data():
         extra = {}
-        if row.get("mood") is not None:
-            extra["mood"] = row["mood"]
-        if row.get("mindful_minutes") is not None:
-            extra["mindful_minutes"] = row["mindful_minutes"]
+        for k in ("mood", "mindful_minutes", "distance_km", "vo2max"):
+            if row.get(k) is not None:
+                extra[k] = row[k]
         s.add(HealthMetricDaily(
             user_id=user_id, day=date.fromisoformat(row["day"]),
             sleep_minutes=row["sleep_minutes"], hrv_ms=row["hrv_ms"],

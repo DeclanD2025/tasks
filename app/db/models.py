@@ -301,3 +301,38 @@ class ScheduledJobRun(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.running)
     detail: Mapped[str] = mapped_column(Text, default="")
+
+
+# --------------------------------------------------------------------------- #
+# Fitness — a local, hand-editable training planner (no external integration)
+# --------------------------------------------------------------------------- #
+class FitnessPlan(Base):
+    """The current training block: an editable name, start date and length.
+
+    One active plan per user for now; ``is_active`` lets future blocks be kept.
+    """
+
+    __tablename__ = "fitness_plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    block_name: Mapped[str] = mapped_column(String(120), default="Training Block")
+    start_date: Mapped[date] = mapped_column(Date, default=utcnow)
+    weeks: Mapped[int] = mapped_column(Integer, default=6)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class FitnessSession(Base):
+    """A single planned session dropped onto a calendar day."""
+
+    __tablename__ = "fitness_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    session_type: Mapped[str] = mapped_column(String(40))   # e.g. "ZONE 2 CARDIO"
+    label: Mapped[str] = mapped_column(String(60), default="")  # optional override
+    color: Mapped[str] = mapped_column(String(9), default="#2ee6ff")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)  # multiple per day
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
