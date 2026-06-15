@@ -746,12 +746,35 @@ class SettingsPage(_ScrollPage):
         t.setObjectName("PanelTitle")
         sources.body.addWidget(t)
         for c in iter_connectors():
+            # Live-capable connectors probe their real source; the rest are mock.
+            live = False
+            if hasattr(c, "available"):
+                try:
+                    live = bool(c.available)
+                except Exception:
+                    live = False
+            if live:
+                label, color = "LIVE", PALETTE.positive
+            elif hasattr(c, "available"):
+                label, color = "OFFLINE · MOCK", PALETTE.orange
+            else:
+                label, color = "MOCK", PALETTE.text_faint
+
             row = QHBoxLayout()
-            name = QLabel(f"{c.name}")
-            status = QLabel("MOCK" if c.is_mock else "CONNECTED")
+            dot = QLabel("●")
+            dot.setStyleSheet(f"color:{color}; font-size:8px;")
+            name = QLabel(c.name)
+            hint = QLabel("")
+            if hasattr(c, "available") and not live:
+                hint = QLabel("start ActivityWatch on :5600 to go live")
+                hint.setObjectName("Mono")
+            status = QLabel(label)
             status.setObjectName("Pill")
+            row.addWidget(dot)
             row.addWidget(name)
             row.addStretch(1)
+            if hint.text():
+                row.addWidget(hint)
             row.addWidget(status)
             sources.body.addLayout(row)
         self.col.addWidget(sources)
