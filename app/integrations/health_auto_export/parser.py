@@ -122,36 +122,58 @@ def _to_float(value) -> float | None:
         return None
 
 
-def parse_payload(payload: dict) -> list[dict]:
-    """Parse one HAE JSON payload into per-day health dicts."""
-    metrics = (payload.get("data") or {}).get("metrics") or []
-    days: dict[date, _DayAgg] = defaultdict(_DayAgg)
+def _accumulate(payload: dict, days: dict[date, _DayAgg]) -> None:
+    """Fold one HAE payload into a shared per-day aggregate.
 
-    for metric in metrics:
+    HAE splits exports by category (Health Metrics, State of Mind, …), so a
+    single sync folder can hold several files. We accumulate them all into one
+    aggregate keyed by day, then reduce once. State of Mind may arrive either
+    inside ``data.metrics`` (name='state_of_mind') or as its own array under
+    ``data.stateOfMind`` / ``data.state_of_mind`` — handle both.
+    """
+    data = payload.get("data") or {}
+
+    # Standard metrics array.
+    for metric in data.get("metrics") or []:
         field_name = _field_for(str(metric.get("name", "")))
         if field_name is None:
             continue
         for point in metric.get("data", []):
-            dt = _parse_dt(str(point.get("date", "")))
-            if dt is None:
-                continue
-            val = _point_value(field_name, point)
-            if val is None:
-                continue
-            day = dt.astimezone().date()
-            days[day].values[field_name].append((dt, val))
+            _add_point(days, field_name, point)
 
+    # State of Mind as a dedicated array (some HAE versions/categories).
+    for key in ("stateOfMind", "state_of_mind", "stateOfMindData"):
+        for point in data.get(key) or []:
+            _add_point(days, "mood", point)
+
+
+def _add_point(days: dict[date, _DayAgg], field_name: str, point: dict) -> None:
+    dt = _parse_dt(str(point.get("date", "") or point.get("start", "")))
+    if dt is None:
+        return
+    val = _point_value(field_name, point)
+    if val is None:
+        return
+    days[dt.astimezone().date()].values[field_name].append((dt, val))
+
+
+def _rows_from_days(days: dict[date, _DayAgg]) -> list[dict]:
     rows = []
     for day in sorted(days):
         agg = days[day].values
         row = {"day": day.isoformat(), "source": "health_auto_export"}
         for field_name in _ALIASES:
             pts = agg.get(field_name)
-            if not pts:
-                row[field_name] = None
-                continue
-            row[field_name] = _reduce(field_name, pts)
+            row[field_name] = _reduce(field_name, pts) if pts else None
         rows.append(row)
+    return rows
+
+
+def parse_payload(payload: dict) -> list[dict]:
+    """Parse a single HAE JSON payload into per-day health dicts."""
+    days: dict[date, _DayAgg] = defaultdict(_DayAgg)
+    _accumulate(payload, days)
+    rows = _rows_from_days(days)
     log.info("Health Auto Export: parsed %d days", len(rows))
     return rows
 
@@ -185,12 +207,42 @@ def parse_file(path: str | Path) -> list[dict]:
     return parse_payload(payload)
 
 
-def latest_export_file(folder: str | Path) -> Path | None:
-    """Return the most recently modified .json export in ``folder`` (recursive)."""
+def recent_export_files(folder: str | Path, *, max_files: int = 12) -> list[Path]:
+    """Return the most recently modified .json exports in ``folder`` (recursive).
+
+    HAE writes a separate file per category (Health Metrics, State of Mind, …)
+    and a new file each run, so we take the newest handful and merge them.
+    """
     folder = Path(folder)
     if not folder.exists():
-        return None
+        return []
     candidates = sorted(
         folder.rglob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
     )
-    return candidates[0] if candidates else None
+    return candidates[:max_files]
+
+
+def latest_export_file(folder: str | Path) -> Path | None:
+    files = recent_export_files(folder, max_files=1)
+    return files[0] if files else None
+
+
+def parse_folder(folder: str | Path, *, max_files: int = 12) -> list[dict]:
+    """Merge the newest exports in ``folder`` into one set of per-day rows.
+
+    Files are read newest-first; each contributes whatever ORION metrics it
+    holds, so split-category exports (e.g. Health Metrics + State of Mind)
+    combine on the same day.
+    """
+    days: dict[date, _DayAgg] = defaultdict(_DayAgg)
+    files = recent_export_files(folder, max_files=max_files)
+    for path in files:
+        try:
+            with Path(path).open(encoding="utf-8") as fh:
+                payload = json.load(fh)
+            _accumulate(payload, days)
+        except (OSError, ValueError) as exc:
+            log.warning("Skipping HAE file %s: %s", path, exc)
+    rows = _rows_from_days(days)
+    log.info("Health Auto Export: merged %d files into %d days", len(files), len(rows))
+    return rows

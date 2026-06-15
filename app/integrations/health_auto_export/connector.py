@@ -27,7 +27,10 @@ from app.core.logging import get_logger
 from app.db.models import Domain, HealthMetricDaily
 from app.ingestion.base import Connector
 from app.integrations.apple_health.connector import AppleHealthConnector
-from app.integrations.health_auto_export.parser import latest_export_file, parse_file
+from app.integrations.health_auto_export.parser import (
+    latest_export_file,
+    parse_folder,
+)
 
 log = get_logger(__name__)
 
@@ -74,15 +77,15 @@ class HealthAutoExportConnector(Connector):
         return self.available
 
     def fetch_raw_data(self) -> list[dict]:
-        path = self.latest_file()
-        if path is not None:
+        folder = self.folder()
+        if folder is not None:
             try:
-                rows = parse_file(path)
+                # Merge across category files (Health Metrics + State of Mind …).
+                rows = parse_folder(folder)
                 if rows:
                     self.is_mock = False
-                    log.info("Health Auto Export: read %s (%d days)", path.name, len(rows))
                     return rows
-            except Exception as exc:  # malformed file shouldn't crash sync
+            except Exception as exc:  # malformed files shouldn't crash sync
                 log.warning("Health Auto Export parse failed: %s", exc)
         self.is_mock = True
         if get_settings().is_production:

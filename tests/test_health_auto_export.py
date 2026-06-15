@@ -97,3 +97,39 @@ def test_parse_file_roundtrip(tmp_path):
     p.write_text(json.dumps(_PAYLOAD))
     rows = parse_file(p)
     assert rows[0]["hrv_ms"] == 55.0
+
+
+def test_parse_folder_merges_category_files(tmp_path):
+    """HAE splits exports by category; a folder may hold Health Metrics AND a
+    separate State of Mind file. They must merge on the same day."""
+    from app.integrations.health_auto_export.parser import parse_folder
+
+    metrics_file = {"data": {"metrics": [
+        {"name": "heart_rate_variability", "units": "ms",
+         "data": [{"qty": 60, "date": "2026-06-14 07:00:00 +0000"}]},
+    ]}}
+    mood_file = {"data": {"metrics": [
+        {"name": "state_of_mind", "units": "",
+         "data": [{"valence": 0.5, "date": "2026-06-14 20:00:00 +0000"}]},
+    ]}}
+    (tmp_path / "HealthMetrics.json").write_text(json.dumps(metrics_file))
+    (tmp_path / "StateOfMind.json").write_text(json.dumps(mood_file))
+
+    rows = parse_folder(tmp_path)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["hrv_ms"] == 60.0   # from HealthMetrics.json
+    assert r["mood"] == 0.5      # from StateOfMind.json — merged same day
+
+
+def test_parse_folder_handles_state_of_mind_array(tmp_path):
+    # Some HAE categories emit a dedicated array rather than a named metric.
+    from app.integrations.health_auto_export.parser import parse_folder
+
+    payload = {"data": {"stateOfMind": [
+        {"valence": 0.2, "date": "2026-06-14 09:00:00 +0000"},
+        {"valence": 0.8, "date": "2026-06-14 21:00:00 +0000"},
+    ]}}
+    (tmp_path / "StateOfMind.json").write_text(json.dumps(payload))
+    rows = parse_folder(tmp_path)
+    assert rows[0]["mood"] == 0.5  # mean(0.2, 0.8)
