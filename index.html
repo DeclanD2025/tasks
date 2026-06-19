@@ -178,6 +178,15 @@
       padding: 2px 10px;
       border-radius: 6px;
     }
+    .time-badge {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: 6px;
+      background: #EFF6FF;
+      color: #1D4ED8;
+    }
+    .time-badge.danger { background: #FEF2F2; color: #B91C1C; }
     .area-group-count { font-size: 12px; color: var(--text-secondary); }
 
     .task-list { display: flex; flex-direction: column; gap: 8px; }
@@ -615,6 +624,15 @@
           </div>
         </div>
         <div class="field">
+          <label for="f-recur">Repeat</label>
+          <select id="f-recur">
+            <option value="none">Doesn’t repeat</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
+        <div class="field">
           <label for="f-notes">Notes</label>
           <textarea id="f-notes" placeholder="Optional details…"></textarea>
         </div>
@@ -651,12 +669,12 @@
     var CACHE_KEY = 'td_tasks_cache';
     var QUEUE_KEY = 'td_pending_ops';
 
-    var AREAS = ['Ashurst', 'TSD', 'Fitba Foundry', 'Fitness', 'Personal', 'OVO Dispute', 'Job Hunt', 'Relationship'];
+    var AREAS = ['Ashurst', 'Steelmen Dispatch', 'Fitba Foundry', 'Fitness', 'Personal', 'OVO Dispute', 'Job Hunt', 'Relationship'];
 
     // Subtle, low-saturation accent per area: {bg, fg, dot}
     var AREA_COLORS = {
-      'Ashurst':       { bg: '#EEF2FF', fg: '#4338CA', dot: '#6366F1' },
-      'TSD':           { bg: '#ECFDF5', fg: '#047857', dot: '#10B981' },
+      'Ashurst':           { bg: '#EEF2FF', fg: '#4338CA', dot: '#6366F1' },
+      'Steelmen Dispatch': { bg: '#ECFDF5', fg: '#047857', dot: '#10B981' },
       'Fitba Foundry': { bg: '#FFF7ED', fg: '#C2410C', dot: '#F97316' },
       'Fitness':       { bg: '#FEF2F2', fg: '#B91C1C', dot: '#EF4444' },
       'Personal':      { bg: '#F5F3FF', fg: '#6D28D9', dot: '#8B5CF6' },
@@ -665,6 +683,85 @@
       'Relationship':  { bg: '#FDF2F8', fg: '#BE185D', dot: '#EC4899' }
     };
     var PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
+    var DEFAULT_AREA_COLOR = { bg: '#F3F4F6', fg: '#374151', dot: '#9CA3AF' };
+
+    // Normalise a task's area; tasks with no area land in "Uncategorized".
+    function taskArea(t) { return (t && t.area) ? t.area : 'Uncategorized'; }
+    function areaColor(a) { return AREA_COLORS[a] || DEFAULT_AREA_COLOR; }
+
+    // The predefined AREAS plus any other areas that actually appear in the
+    // data, so a task is never silently hidden because its area isn't listed.
+    function effectiveAreas() {
+      var out = AREAS.slice();
+      var seen = {};
+      AREAS.forEach(function (a) { seen[a] = true; });
+      tasks.forEach(function (t) {
+        var a = taskArea(t);
+        if (!seen[a]) { seen[a] = true; out.push(a); }
+      });
+      return out;
+    }
+
+    // Count todo tasks per (normalised) area.
+    function areaCounts() {
+      var counts = {};
+      todoTasks().forEach(function (t) {
+        var a = taskArea(t);
+        counts[a] = (counts[a] || 0) + 1;
+      });
+      return counts;
+    }
+
+    // ---------- Recurrence ----------
+    var RECUR_LABEL = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' };
+    // Set true once we confirm the DB has a `recurrence` column, so the app
+    // never sends an unknown column (which PostgREST would reject) before the
+    // migration is applied. Detected from fetched rows.
+    var recurrenceSupported = false;
+    function detectRecurrence(rows) {
+      if (rows && rows.length && Object.prototype.hasOwnProperty.call(rows[0], 'recurrence')) {
+        recurrenceSupported = true;
+      }
+    }
+    function normRecur(v) { return (v && v !== 'none') ? v : null; }
+    function toISODate(d) {
+      return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    }
+    // Next due date for a recurring task: advance the base date by one interval.
+    // Base = the task's own due date if set, otherwise today.
+    function nextDueDate(baseStr, rec) {
+      var base;
+      if (baseStr) { base = new Date(baseStr + 'T00:00:00'); }
+      else { base = new Date(); base.setHours(0, 0, 0, 0); }
+      if (rec === 'daily') base.setDate(base.getDate() + 1);
+      else if (rec === 'weekly') base.setDate(base.getDate() + 7);
+      else if (rec === 'monthly') {
+        // Advance one month, clamping to the last day of the target month so
+        // Jan 31 -> Feb 28/29 instead of overflowing into March.
+        var day = base.getDate();
+        base.setDate(1);
+        base.setMonth(base.getMonth() + 1);
+        var lastDay = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+        base.setDate(Math.min(day, lastDay));
+      }
+      else return baseStr || null;
+      return toISODate(base);
+    }
+    // When a recurring task is completed, create its next occurrence.
+    function spawnNextOccurrence(t) {
+      var nt = {
+        id: uuid(),
+        title: t.title, area: t.area, priority: t.priority,
+        due_date: nextDueDate(t.due_date, t.recurrence),
+        notes: t.notes, recurrence: t.recurrence,
+        status: 'todo', completed_at: null,
+        created_at: new Date().toISOString()
+      };
+      tasks.push(nt);
+      saveCache();
+      pushInsert(nt);
+      return nt;
+    }
 
     var sb = null;
     try {
@@ -762,8 +859,25 @@
       if (diff === 0) label = 'Today';
       else if (diff === 1) label = 'Tomorrow';
       else if (diff === -1) label = 'Yesterday';
+      else if (diff > 1 && diff <= 6) label = d.toLocaleDateString(undefined, { weekday: 'short' });
       else label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
       return { label: label, overdue: overdue };
+    }
+
+    // Which time bucket a dated task falls into (for the Scheduled view).
+    function dueBucket(t) {
+      if (!t.due_date) return null;
+      var d = new Date(t.due_date + 'T00:00:00');
+      var today = new Date(); today.setHours(0, 0, 0, 0);
+      var diff = Math.round((d - today) / 86400000);
+      if (diff < 0) return 'overdue';
+      if (diff === 0) return 'today';
+      if (diff === 1) return 'tomorrow';
+      if (diff <= 7) return 'week';
+      return 'later';
+    }
+    function datedTodos() {
+      return todoTasks().filter(function (t) { return t.due_date; });
     }
 
     function relTime(iso) {
@@ -785,21 +899,20 @@
 
     // ---------- Rendering: sidebar ----------
     function renderNav() {
-      var counts = {};
-      AREAS.forEach(function (a) { counts[a] = 0; });
-      todoTasks().forEach(function (t) { if (counts[t.area] != null) counts[t.area]++; });
+      var counts = areaCounts();
       var totalTodo = todoTasks().length;
       var doneCount = doneTasks().length;
 
       var views = $('nav-views');
       views.innerHTML = '';
       views.appendChild(navItem('all', '<span class="area-dot" style="background:#111827"></span>', 'All Tasks', totalTodo));
+      views.appendChild(navItem('scheduled', '<span class="area-dot" style="background:#0EA5E9"></span>', 'Scheduled', datedTodos().length));
 
       var areasEl = $('nav-areas');
       areasEl.innerHTML = '';
-      AREAS.forEach(function (a) {
-        var c = AREA_COLORS[a];
-        areasEl.appendChild(navItem(a, '<span class="area-dot" style="background:' + c.dot + '"></span>', a, counts[a]));
+      effectiveAreas().forEach(function (a) {
+        var c = areaColor(a);
+        areasEl.appendChild(navItem(a, '<span class="area-dot" style="background:' + c.dot + '"></span>', a, counts[a] || 0));
       });
 
       // Completed nav (appended after areas, styled as a view)
@@ -828,6 +941,7 @@
       var nav = $('mobile-nav');
       var items = [
         { view: 'all', label: 'All', badge: totalTodo, icon: '<path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>' },
+        { view: 'scheduled', label: 'Scheduled', badge: datedTodos().length, icon: '<rect x="3" y="4" width="18" height="17" rx="2" stroke="currentColor" stroke-width="2" fill="none"/><path d="M3 9h18M8 2v4M16 2v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>' },
         { view: 'Personal', label: 'Areas', badge: 0, icon: '<path d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v6H4zM14 15h6v6h-6z" stroke="currentColor" stroke-width="2" fill="none"/>' },
         { view: 'completed', label: 'Done', badge: doneCount, icon: '<path d="M5 12l4 4L19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' }
       ];
@@ -848,14 +962,12 @@
     }
 
     function openAreaPicker() {
-      var counts = {};
-      AREAS.forEach(function (a) { counts[a] = 0; });
-      todoTasks().forEach(function (t) { if (counts[t.area] != null) counts[t.area]++; });
+      var counts = areaCounts();
       var nav = $('sheet-areas');
       nav.innerHTML = '';
       nav.appendChild(sheetItem('all', '#111827', 'All Tasks', todoTasks().length));
-      AREAS.forEach(function (a) {
-        nav.appendChild(sheetItem(a, AREA_COLORS[a].dot, a, counts[a]));
+      effectiveAreas().forEach(function (a) {
+        nav.appendChild(sheetItem(a, areaColor(a).dot, a, counts[a] || 0));
       });
       nav.appendChild(sheetItem('completed', '#9CA3AF', 'Completed', doneTasks().length));
       $('sheet-overlay').classList.add('open');
@@ -880,6 +992,7 @@
     function render() {
       renderNav();
       if (currentView === 'completed') return renderCompleted();
+      if (currentView === 'scheduled') return renderScheduled();
       renderActive();
     }
 
@@ -890,11 +1003,11 @@
       var list = todoTasks().filter(matchesSearch);
       var grouped;
       if (currentView === 'all') {
-        grouped = AREAS.map(function (a) {
-          return { area: a, items: sortTasks(list.filter(function (t) { return t.area === a; })) };
+        grouped = effectiveAreas().map(function (a) {
+          return { area: a, items: sortTasks(list.filter(function (t) { return taskArea(t) === a; })) };
         });
       } else {
-        grouped = [{ area: currentView, items: sortTasks(list.filter(function (t) { return t.area === currentView; })) }];
+        grouped = [{ area: currentView, items: sortTasks(list.filter(function (t) { return taskArea(t) === currentView; })) }];
       }
 
       var visible = grouped.filter(function (g) { return showEmptyAreas || g.items.length > 0; });
@@ -935,6 +1048,64 @@
       }
     }
 
+    function renderScheduled() {
+      $('view-title').textContent = 'Scheduled';
+
+      var list = datedTodos().filter(matchesSearch);
+      var order = ['overdue', 'today', 'tomorrow', 'week', 'later'];
+      var labels = { overdue: 'Overdue', today: 'Today', tomorrow: 'Tomorrow', week: 'This Week', later: 'Later' };
+      var buckets = {};
+      order.forEach(function (k) { buckets[k] = []; });
+      list.forEach(function (t) {
+        var b = dueBucket(t);
+        if (b) buckets[b].push(t);
+      });
+      // Within each bucket: earliest due first, then priority.
+      order.forEach(function (k) {
+        buckets[k].sort(function (a, b) {
+          var da = a.due_date || '9999-99-99', db = b.due_date || '9999-99-99';
+          if (da !== db) return da < db ? -1 : 1;
+          var pa = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 1;
+          var pb = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 1;
+          return pa - pb;
+        });
+      });
+
+      var total = list.length;
+      $('view-sub').textContent = total === 0 ? '' : (total + (total === 1 ? ' task' : ' tasks'));
+      content.innerHTML = '';
+
+      if (total === 0) {
+        if (searchQuery) {
+          content.appendChild(emptyState('🔍', 'No matches.', 'No scheduled tasks match “' + searchQuery + '”.'));
+        } else {
+          content.appendChild(emptyState('📅', 'Nothing scheduled.', 'Give a task a due date and it’ll show up here.'));
+        }
+        return;
+      }
+
+      order.forEach(function (k) {
+        if (buckets[k].length === 0) return;
+        content.appendChild(timeGroup(labels[k], k === 'overdue', buckets[k]));
+      });
+    }
+
+    function timeGroup(label, danger, items) {
+      var wrap = document.createElement('div');
+      wrap.className = 'area-group';
+      var header = document.createElement('div');
+      header.className = 'area-group-header';
+      header.innerHTML = '<span class="time-badge' + (danger ? ' danger' : '') + '">' + esc(label) + '</span>' +
+        '<span class="area-group-count">' + items.length + '</span>';
+      wrap.appendChild(header);
+
+      var listEl = document.createElement('div');
+      listEl.className = 'task-list';
+      items.forEach(function (t) { listEl.appendChild(taskCard(t, { showArea: true })); });
+      wrap.appendChild(listEl);
+      return wrap;
+    }
+
     function areaGroup(area, items) {
       var c = AREA_COLORS[area] || { bg: '#F3F4F6', fg: '#374151' };
       var wrap = document.createElement('div');
@@ -960,7 +1131,8 @@
       return wrap;
     }
 
-    function taskCard(t) {
+    function taskCard(t, opts) {
+      opts = opts || {};
       var card = document.createElement('div');
       card.className = 'task-card prio-' + (t.priority || 'medium');
       card.setAttribute('data-id', t.id);
@@ -979,9 +1151,16 @@
       body.className = 'task-body';
       var titleHtml = '<span class="task-title">' + esc(t.title) + '</span>';
       var meta = '';
+      if (opts.showArea) {
+        var ac = areaColor(taskArea(t));
+        meta += '<span class="area-badge" style="background:' + ac.bg + ';color:' + ac.fg + ';font-size:11px">' + esc(taskArea(t)) + '</span>';
+      }
       var due = fmtDue(t.due_date);
       if (due) {
         meta += '<span class="task-due' + (due.overdue ? ' overdue' : '') + '">📅 ' + esc(due.label) + '</span>';
+      }
+      if (t.recurrence) {
+        meta += '<span class="task-due">🔁 ' + esc(RECUR_LABEL[t.recurrence] || 'Repeats') + '</span>';
       }
       body.innerHTML = titleHtml + (meta ? '<div class="task-meta">' + meta + '</div>' : '');
       if (t.notes) {
@@ -1113,6 +1292,13 @@
       renderNav();
       pushUpdate(id, { status: 'done', completed_at: t.completed_at });
 
+      // Recurring task: create the next occurrence
+      if (t.recurrence) {
+        var next = spawnNextOccurrence(t);
+        var nd = fmtDue(next.due_date);
+        toast('Repeats · next ' + (nd ? nd.label : RECUR_LABEL[t.recurrence] || ''));
+      }
+
       // Collapse + remove after the sequence (~600ms then collapse)
       setTimeout(function () {
         card.classList.add('collapse');
@@ -1152,19 +1338,23 @@
         if (t) {
           t.title = data.title; t.area = data.area; t.priority = data.priority;
           t.due_date = data.due_date; t.notes = data.notes;
+          t.recurrence = data.recurrence;
         }
         saveCache();
         render();
-        pushUpdate(editingId, {
+        var patch = {
           title: data.title, area: data.area, priority: data.priority,
           due_date: data.due_date, notes: data.notes
-        });
+        };
+        if (recurrenceSupported) patch.recurrence = data.recurrence;
+        pushUpdate(editingId, patch);
         toast('Task updated');
       } else {
         var nt = {
           id: uuid(),
           title: data.title, area: data.area, priority: data.priority,
           due_date: data.due_date, notes: data.notes,
+          recurrence: data.recurrence,
           status: 'todo', completed_at: null,
           created_at: new Date().toISOString()
         };
@@ -1211,11 +1401,13 @@
     }
 
     function stripLocal(t) {
-      return {
+      var row = {
         id: t.id, title: t.title, area: t.area, priority: t.priority,
         status: t.status, notes: t.notes, due_date: t.due_date,
         created_at: t.created_at, completed_at: t.completed_at
       };
+      if (recurrenceSupported) row.recurrence = t.recurrence || null;
+      return row;
     }
 
     function flushQueue() {
@@ -1246,6 +1438,7 @@
     function initialLoad() {
       // 1. Render from cache instantly
       tasks = loadCache();
+      detectRecurrence(tasks);
       render();
 
       // 2. Sync from Supabase
@@ -1257,6 +1450,7 @@
         showLoading(false);
         if (res.error || !res.data) return;
         tasks = res.data;
+        detectRecurrence(tasks);
         saveCache();
         render();
       }).catch(function () { clearTimeout(slow); showLoading(false); });
@@ -1306,6 +1500,7 @@
       $('f-title').value = task ? task.title : '';
       $('f-area').value = task ? task.area : (AREAS.indexOf(currentView) !== -1 ? currentView : AREAS[0]);
       $('f-due').value = task && task.due_date ? task.due_date : '';
+      $('f-recur').value = task && task.recurrence ? task.recurrence : 'none';
       $('f-notes').value = task ? (task.notes || '') : '';
       setPriority(task ? (task.priority || 'medium') : 'medium');
 
@@ -1387,6 +1582,7 @@
         area: $('f-area').value,
         priority: selectedPriority,
         due_date: $('f-due').value || null,
+        recurrence: normRecur($('f-recur').value),
         notes: $('f-notes').value.trim() || null
       });
       closeModal();
