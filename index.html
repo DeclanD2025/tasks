@@ -1130,15 +1130,44 @@
     // ---------- Usage / activity log (local, durable) ----------
     var EVENTS_KEY = 'td_events';
     var OPEN_KEY = 'td_last_open';
+    var eventsSupported = false;
     function logEvent(type, extra) {
+      var e = { t: type, ts: new Date().toISOString() };
+      if (extra) { for (var k in extra) e[k] = extra[k]; }
       try {
         var log = JSON.parse(localStorage.getItem(EVENTS_KEY) || '[]');
-        var e = { t: type, ts: new Date().toISOString() };
-        if (extra) { for (var k in extra) e[k] = extra[k]; }
         log.push(e);
         if (log.length > 4000) log = log.slice(log.length - 4000);
         localStorage.setItem(EVENTS_KEY, JSON.stringify(log));
       } catch (_) {}
+      pushEvent(e);
+    }
+    function pushEvent(e) {
+      if (!eventsSupported || !sb || !navigator.onLine) return;
+      try {
+        sb.from('events').insert({
+          type: e.t, ts: e.ts, task_id: e.id || null, area: e.area || null, priority: e.priority || null
+        }).then(function () {}, function () {});
+      } catch (_) {}
+    }
+    // Detect the synced events table; back-fill local history once.
+    function initEvents() {
+      if (!sb) return;
+      sb.from('events').select('id').limit(1).then(function (res) {
+        if (res.error) return; // table not created yet — stay local-only
+        eventsSupported = true;
+        try {
+          if (localStorage.getItem('td_events_synced')) return;
+          var log = JSON.parse(localStorage.getItem(EVENTS_KEY) || '[]');
+          if (!log.length) { localStorage.setItem('td_events_synced', '1'); return; }
+          var rows = log.map(function (e) {
+            return { type: e.t, ts: e.ts, task_id: e.id || null, area: e.area || null, priority: e.priority || null };
+          });
+          sb.from('events').insert(rows).then(function (r) {
+            if (!r.error) localStorage.setItem('td_events_synced', '1');
+          }, function () {});
+        } catch (_) {}
+      });
     }
     // Count a session at most once per 20 minutes.
     function logOpen() {
@@ -1824,6 +1853,7 @@
       if (!sb) { return; }
       var slow = setTimeout(function () { showLoading(true); }, 400);
       flushQueue();
+      initEvents();
       sb.from('tasks').select('*').then(function (res) {
         clearTimeout(slow);
         showLoading(false);

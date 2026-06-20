@@ -181,9 +181,16 @@
       useEffect(() => {
         let alive = true;
         const sb = window.supabase.createClient(SB_URL, SB_KEY);
-        sb.from('tasks').select('*').then(res => {
+        Promise.all([
+          sb.from('tasks').select('*'),
+          sb.from('events').select('type,ts,task_id,area,priority').order('ts', { ascending: true }).limit(10000)
+        ]).then(([tres, eres]) => {
           if (!alive) return;
-          setData({ loading: false, tasks: res.data || [], events: readEvents(), error: res.error });
+          const remote = (!eres.error && eres.data)
+            ? eres.data.map(r => ({ t: r.type, ts: r.ts, id: r.task_id, area: r.area, priority: r.priority }))
+            : null;
+          const events = (remote && remote.length) ? remote : readEvents();
+          setData({ loading: false, tasks: tres.data || [], events, error: tres.error });
         }).catch(e => { if (alive) setData({ loading: false, tasks: [], events: readEvents(), error: e }); });
         return () => { alive = false; };
       }, []);
