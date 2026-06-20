@@ -650,6 +650,7 @@
       padding: 1px 8px;
     }
     .area-group-count { font-weight: 600; letter-spacing: 0.04em; }
+    .cat-tag { font-size: 11px; font-weight: 600; border: 1.5px solid #0A0A0A; padding: 1px 7px; letter-spacing: 0.01em; }
     .time-badge {
       font-weight: 700;
       font-size: 11px;
@@ -792,6 +793,10 @@
           <select id="f-area" required></select>
         </div>
         <div class="field">
+          <label for="f-cat">Category</label>
+          <input type="text" id="f-cat" autocomplete="off" placeholder="e.g. Article: Why Alfred?" />
+        </div>
+        <div class="field">
           <label>Priority</label>
           <div class="priority-toggle" id="f-priority">
             <button type="button" data-p="low"><span class="pdot"></span> Low</button>
@@ -915,6 +920,12 @@
     function detectRecurrence(rows) {
       if (rows && rows.length && Object.prototype.hasOwnProperty.call(rows[0], 'recurrence')) {
         recurrenceSupported = true;
+      }
+    }
+    var categorySupported = false;
+    function detectCategory(rows) {
+      if (rows && rows.length && Object.prototype.hasOwnProperty.call(rows[0], 'category')) {
+        categorySupported = true;
       }
     }
     function normRecur(v) { return (v && v !== 'none') ? v : null; }
@@ -1222,7 +1233,8 @@
       if (!searchQuery) return true;
       var q = searchQuery.toLowerCase();
       return (t.title || '').toLowerCase().indexOf(q) !== -1 ||
-             (t.notes || '').toLowerCase().indexOf(q) !== -1;
+             (t.notes || '').toLowerCase().indexOf(q) !== -1 ||
+             (t.category || '').toLowerCase().indexOf(q) !== -1;
     }
     function isOverdue(t) {
       if (!t.due_date) return false;
@@ -1575,6 +1587,9 @@
         var ac = areaColor(taskArea(t));
         meta += '<span class="area-badge" style="background:' + ac.bg + ';color:' + ac.fg + ';font-size:11px">' + esc(taskArea(t)) + '</span>';
       }
+      if (t.category) {
+        meta += '<span class="cat-tag">' + esc(t.category) + '</span>';
+      }
       var due = fmtDue(t.due_date);
       if (due) {
         meta += '<span class="task-due' + (due.overdue ? ' overdue' : '') + '"><svg class="m-ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.2" y="3.3" width="11.6" height="10.5" rx="1.4"/><path d="M2.2 6.5h11.6M5.8 2v2.7M10.2 2v2.7"/></svg>' + esc(due.label) + '</span>';
@@ -1654,6 +1669,7 @@
       body.innerHTML = '<span class="task-title">' + esc(t.title) + '</span>' +
         '<div class="task-meta">' +
         '<span class="area-badge" style="background:' + c.bg + ';color:' + c.fg + ';font-size:11px">' + esc(t.area) + '</span>' +
+        (t.category ? '<span class="cat-tag">' + esc(t.category) + '</span>' : '') +
         '<span class="completed-time">' + esc(relTime(t.completed_at)) + '</span></div>';
 
       var reopen = document.createElement('button');
@@ -1762,7 +1778,7 @@
         if (t) {
           t.title = data.title; t.area = data.area; t.priority = data.priority;
           t.due_date = data.due_date; t.notes = data.notes;
-          t.recurrence = data.recurrence;
+          t.recurrence = data.recurrence; t.category = data.category;
         }
         saveCache();
         render();
@@ -1771,6 +1787,7 @@
           due_date: data.due_date, notes: data.notes
         };
         if (recurrenceSupported) patch.recurrence = data.recurrence;
+        if (categorySupported) patch.category = data.category;
         pushUpdate(editingId, patch);
         toast('Task updated');
       } else {
@@ -1778,7 +1795,7 @@
           id: uuid(),
           title: data.title, area: data.area, priority: data.priority,
           due_date: data.due_date, notes: data.notes,
-          recurrence: data.recurrence,
+          recurrence: data.recurrence, category: data.category,
           status: 'todo', completed_at: null,
           created_at: new Date().toISOString()
         };
@@ -1835,6 +1852,7 @@
       };
       if (recurrenceSupported) row.recurrence = t.recurrence || null;
       if (sortSupported) row.sort_order = hasOrder(t) ? t.sort_order : null;
+      if (categorySupported) row.category = t.category || null;
       return row;
     }
 
@@ -1869,6 +1887,7 @@
       tasks = loadCache();
       detectRecurrence(tasks);
       detectSort(tasks);
+      detectCategory(tasks);
       render();
 
       // 2. Sync from Supabase
@@ -1883,6 +1902,7 @@
         tasks = res.data;
         detectRecurrence(tasks);
       detectSort(tasks);
+      detectCategory(tasks);
         saveCache();
         render();
       }).catch(function () { clearTimeout(slow); showLoading(false); });
@@ -1931,6 +1951,7 @@
 
       $('f-title').value = task ? task.title : '';
       $('f-area').value = task ? task.area : (AREAS.indexOf(currentView) !== -1 ? currentView : AREAS[0]);
+      $('f-cat').value = task && task.category ? task.category : '';
       $('f-due').value = task && task.due_date ? task.due_date : '';
       $('f-recur').value = task && task.recurrence ? task.recurrence : 'none';
       $('f-notes').value = task ? (task.notes || '') : '';
@@ -2012,6 +2033,7 @@
       saveTask({
         title: title,
         area: $('f-area').value,
+        category: $('f-cat').value.trim() || null,
         priority: selectedPriority,
         due_date: $('f-due').value || null,
         recurrence: normRecur($('f-recur').value),
