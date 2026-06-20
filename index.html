@@ -729,9 +729,9 @@
     .sheet-title { font-weight: 700; text-transform: uppercase; }
 
     /* dashboard drag-to-prioritise */
-    .drag-grip { display: flex; align-items: center; color: var(--text-secondary); padding-left: 8px; cursor: grab; }
+    .drag-grip { display: flex; align-items: center; color: var(--text-secondary); padding: 4px 4px 4px 8px; cursor: grab; touch-action: none; }
+    .drag-grip:active { cursor: grabbing; }
     .drag-grip svg { width: 15px; height: 15px; fill: currentColor; }
-    .task-card[draggable="true"]:active { cursor: grabbing; }
     .task-card.dragging { opacity: 0.4; }
     .task-card.drag-before { box-shadow: inset 0 4px 0 0 var(--accent); }
     .task-card.drag-after { box-shadow: inset 0 -4px 0 0 var(--accent); }
@@ -1016,32 +1016,69 @@
         el.classList.remove('drag-before', 'drag-after');
       });
     }
+    // Pointer-based drag so it works with mouse, touch and pen alike.
     function setupDrag(card, t) {
-      card.setAttribute('draggable', 'true');
       var grip = document.createElement('span');
       grip.className = 'drag-grip';
       grip.setAttribute('aria-hidden', 'true');
       grip.innerHTML = '<svg viewBox="0 0 16 16"><circle cx="6" cy="4" r="1.1"/><circle cx="10" cy="4" r="1.1"/><circle cx="6" cy="8" r="1.1"/><circle cx="10" cy="8" r="1.1"/><circle cx="6" cy="12" r="1.1"/><circle cx="10" cy="12" r="1.1"/></svg>';
       card.insertBefore(grip, card.querySelector('.shimmer'));
-      card.addEventListener('dragstart', function (e) {
-        dragId = t.id; card.classList.add('dragging');
-        try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', t.id); } catch (_) {}
-      });
-      card.addEventListener('dragend', function () { dragId = null; card.classList.remove('dragging'); clearDragMarks(); });
-      card.addEventListener('dragover', function (e) {
-        if (!dragId || dragId === t.id) return;
-        e.preventDefault(); e.dataTransfer.dropEffect = 'move';
-        var before = (e.clientY - card.getBoundingClientRect().top) < card.offsetHeight / 2;
-        clearDragMarks(); card.classList.add(before ? 'drag-before' : 'drag-after');
-      });
-      card.addEventListener('dragleave', function () { card.classList.remove('drag-before', 'drag-after'); });
-      card.addEventListener('drop', function (e) {
-        if (!dragId || dragId === t.id) return;
+
+      var active = false, moved = false, startY = 0, pid = null;
+
+      // Task card under a screen point, ignoring the one being dragged.
+      function cardAt(x, y) {
+        card.style.pointerEvents = 'none';
+        var el = document.elementFromPoint(x, y);
+        card.style.pointerEvents = '';
+        return el && el.closest ? el.closest('.task-card') : null;
+      }
+      function onMove(e) {
+        if (!active) return;
         e.preventDefault();
-        var after = card.classList.contains('drag-after');
-        card.classList.remove('drag-before', 'drag-after');
-        reorderDashboard(dragId, t.id, after);
+        if (!moved && Math.abs(e.clientY - startY) < 4) return;
+        moved = true;
+        var tgt = cardAt(e.clientX, e.clientY);
+        clearDragMarks();
+        if (tgt && tgt !== card && tgt.parentNode === card.parentNode) {
+          var before = (e.clientY - tgt.getBoundingClientRect().top) < tgt.offsetHeight / 2;
+          tgt.classList.add(before ? 'drag-before' : 'drag-after');
+        }
+        // auto-scroll near the viewport edges while dragging
+        var vh = window.innerHeight;
+        if (e.clientY < 72) window.scrollBy(0, -12);
+        else if (e.clientY > vh - 72) window.scrollBy(0, 12);
+      }
+      function onUp() {
+        if (!active) return;
+        active = false;
+        try { grip.releasePointerCapture(pid); } catch (_) {}
+        grip.removeEventListener('pointermove', onMove);
+        grip.removeEventListener('pointerup', onUp);
+        grip.removeEventListener('pointercancel', onUp);
+        card.classList.remove('dragging');
+        var marked = content.querySelector('.drag-before, .drag-after');
+        if (moved && marked && marked !== card) {
+          var after = marked.classList.contains('drag-after');
+          var targetId = marked.getAttribute('data-id');
+          clearDragMarks();
+          if (targetId) reorderDashboard(t.id, targetId, after);
+        } else {
+          clearDragMarks();
+        }
+        dragId = null;
+      }
+      grip.addEventListener('pointerdown', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        active = true; moved = false; startY = e.clientY; pid = e.pointerId; dragId = t.id;
+        card.classList.add('dragging');
+        try { grip.setPointerCapture(pid); } catch (_) {}
+        grip.addEventListener('pointermove', onMove);
+        grip.addEventListener('pointerup', onUp);
+        grip.addEventListener('pointercancel', onUp);
       });
+      grip.addEventListener('click', function (e) { e.stopPropagation(); });
     }
 
     var sb = null;
