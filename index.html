@@ -662,7 +662,7 @@
     }
     .time-badge.danger { background: var(--destructive); color: #FFFFFF; border-color: var(--destructive); }
 
-    .task-card { background: #FFFFFF; border: 2px solid #0A0A0A; border-left: none; box-shadow: none; padding-left: 24px; }
+    .task-card { background: #FFFFFF; border: 2px solid #0A0A0A; border-left: none; box-shadow: none; padding-left: 24px; -webkit-user-select: none; user-select: none; }
     .task-card::before {
       content: "";
       position: absolute;
@@ -732,7 +732,7 @@
     .drag-grip { display: flex; align-items: center; color: var(--text-secondary); padding: 4px 4px 4px 8px; cursor: grab; touch-action: none; }
     .drag-grip:active { cursor: grabbing; }
     .drag-grip svg { width: 15px; height: 15px; fill: currentColor; }
-    .task-card.dragging { opacity: 0.4; }
+    .task-card.dragging { opacity: 0.4; cursor: grabbing; }
     .task-card.drag-before { box-shadow: inset 0 4px 0 0 var(--accent); }
     .task-card.drag-after { box-shadow: inset 0 -4px 0 0 var(--accent); }
     .stats-link { text-decoration: none; }
@@ -961,6 +961,7 @@
     var SORT_STEP = 1000;
     var sortSupported = false;
     var dragId = null;
+    var justDragged = false;
     function detectSort(rows) {
       if (rows && rows.length && Object.prototype.hasOwnProperty.call(rows[0], 'sort_order')) sortSupported = true;
     }
@@ -1027,8 +1028,9 @@
       grip.setAttribute('aria-hidden', 'true');
       grip.innerHTML = '<svg viewBox="0 0 16 16"><circle cx="6" cy="4" r="1.1"/><circle cx="10" cy="4" r="1.1"/><circle cx="6" cy="8" r="1.1"/><circle cx="10" cy="8" r="1.1"/><circle cx="6" cy="12" r="1.1"/><circle cx="10" cy="12" r="1.1"/></svg>';
       card.insertBefore(grip, card.querySelector('.shimmer'));
+      card.style.cursor = 'grab';
 
-      var active = false, moved = false, startY = 0, pid = null;
+      var pending = false, active = false, moved = false, startX = 0, startY = 0, pid = null;
 
       // Task card under a screen point, ignoring the one being dragged.
       function cardAt(x, y) {
@@ -1037,10 +1039,19 @@
         card.style.pointerEvents = '';
         return el && el.closest ? el.closest('.task-card') : null;
       }
+      function beginDrag() {
+        active = true; pending = false; dragId = t.id;
+        try { card.setPointerCapture(pid); } catch (_) {}
+        card.classList.add('dragging');
+        card.style.touchAction = 'none';
+      }
       function onMove(e) {
-        if (!active) return;
+        if (!pending && !active) return;
+        if (!active) {
+          if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) < 6) return;
+          beginDrag();
+        }
         e.preventDefault();
-        if (!moved && Math.abs(e.clientY - startY) < 4) return;
         moved = true;
         var tgt = cardAt(e.clientX, e.clientY);
         clearDragMarks();
@@ -1048,19 +1059,21 @@
           var before = (e.clientY - tgt.getBoundingClientRect().top) < tgt.offsetHeight / 2;
           tgt.classList.add(before ? 'drag-before' : 'drag-after');
         }
-        // auto-scroll near the viewport edges while dragging
         var vh = window.innerHeight;
         if (e.clientY < 72) window.scrollBy(0, -12);
         else if (e.clientY > vh - 72) window.scrollBy(0, 12);
       }
       function onUp() {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+        pending = false;
         if (!active) return;
         active = false;
-        try { grip.releasePointerCapture(pid); } catch (_) {}
-        grip.removeEventListener('pointermove', onMove);
-        grip.removeEventListener('pointerup', onUp);
-        grip.removeEventListener('pointercancel', onUp);
+        try { card.releasePointerCapture(pid); } catch (_) {}
         card.classList.remove('dragging');
+        card.style.touchAction = '';
+        if (moved) justDragged = true; // swallow the click that fires after a drag
         var marked = content.querySelector('.drag-before, .drag-after');
         if (moved && marked && marked !== card) {
           var after = marked.classList.contains('drag-after');
@@ -1072,15 +1085,19 @@
         }
         dragId = null;
       }
-      grip.addEventListener('pointerdown', function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        active = true; moved = false; startY = e.clientY; pid = e.pointerId; dragId = t.id;
-        card.classList.add('dragging');
-        try { grip.setPointerCapture(pid); } catch (_) {}
-        grip.addEventListener('pointermove', onMove);
-        grip.addEventListener('pointerup', onUp);
-        grip.addEventListener('pointercancel', onUp);
+      // Whole row is draggable with a mouse/pen; on touch only the grip drags
+      // (so the list still scrolls and taps still open a task).
+      card.addEventListener('pointerdown', function (e) {
+        if (e.button != null && e.button !== 0) return;
+        if (e.target.closest('.checkbox')) return;
+        var onGrip = !!e.target.closest('.drag-grip');
+        if (e.pointerType === 'touch' && !onGrip) return;
+        startX = e.clientX; startY = e.clientY; pid = e.pointerId;
+        pending = true; active = false; moved = false; justDragged = false;
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+        if (onGrip) { e.preventDefault(); beginDrag(); }
       });
       grip.addEventListener('click', function (e) { e.stopPropagation(); });
     }
@@ -1105,6 +1122,11 @@
     var content = $('content');
     var modalOverlay = $('modal-overlay');
     var form = $('task-form');
+
+    // Suppress the click that follows a drag so it doesn't open the edit modal.
+    content.addEventListener('click', function (e) {
+      if (justDragged) { justDragged = false; e.stopPropagation(); e.preventDefault(); }
+    }, true);
 
     // ---------- Persistence ----------
     function loadCache() {
