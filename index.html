@@ -735,6 +735,7 @@
     .task-card.dragging { opacity: 0.4; }
     .task-card.drag-before { box-shadow: inset 0 4px 0 0 var(--accent); }
     .task-card.drag-after { box-shadow: inset 0 -4px 0 0 var(--accent); }
+    .stats-link { text-decoration: none; }
   </style>
 </head>
 <body>
@@ -756,7 +757,10 @@
           <div class="main-title" id="view-title">All Tasks</div>
           <div class="main-sub" id="view-sub"></div>
         </div>
-        <button class="btn-primary header-add-btn" id="add-task-btn">＋ Add Task</button>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <a class="btn-ghost stats-link" href="./stats.html">Stats ↗</a>
+          <button class="btn-primary header-add-btn" id="add-task-btn">＋ Add Task</button>
+        </div>
       </div>
       <div class="search-row" id="search-row">
         <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -1121,6 +1125,30 @@
       var q = loadQueue();
       q.push(op);
       saveQueue(q);
+    }
+
+    // ---------- Usage / activity log (local, durable) ----------
+    var EVENTS_KEY = 'td_events';
+    var OPEN_KEY = 'td_last_open';
+    function logEvent(type, extra) {
+      try {
+        var log = JSON.parse(localStorage.getItem(EVENTS_KEY) || '[]');
+        var e = { t: type, ts: new Date().toISOString() };
+        if (extra) { for (var k in extra) e[k] = extra[k]; }
+        log.push(e);
+        if (log.length > 4000) log = log.slice(log.length - 4000);
+        localStorage.setItem(EVENTS_KEY, JSON.stringify(log));
+      } catch (_) {}
+    }
+    // Count a session at most once per 20 minutes.
+    function logOpen() {
+      try {
+        var last = +localStorage.getItem(OPEN_KEY) || 0;
+        if (Date.now() - last > 20 * 60 * 1000) {
+          logEvent('open');
+          localStorage.setItem(OPEN_KEY, String(Date.now()));
+        }
+      } catch (_) {}
     }
 
     // ---------- Helpers ----------
@@ -1634,6 +1662,7 @@
       saveCache();
       renderNav();
       pushUpdate(id, { status: 'done', completed_at: t.completed_at });
+      logEvent('complete', { area: t.area, priority: t.priority, id: t.id });
 
       // Recurring task: create the next occurrence
       if (t.recurrence) {
@@ -1660,6 +1689,7 @@
       saveCache();
       render();
       pushUpdate(id, { status: 'todo', completed_at: null });
+      logEvent('reopen', { id: id });
       toast('Task reopened');
     }
 
@@ -1708,11 +1738,14 @@
         }
         render();
         pushInsert(nt);
+        logEvent('create', { area: nt.area, priority: nt.priority, id: nt.id });
         toast('Task added');
       }
     }
 
     function deleteTask(id) {
+      var d = tasks.find(function (t) { return t.id === id; });
+      logEvent('delete', { area: d ? d.area : null, id: id });
       tasks = tasks.filter(function (t) { return t.id !== id; });
       saveCache();
       render();
@@ -1780,6 +1813,7 @@
     }
 
     function initialLoad() {
+      logOpen();
       // 1. Render from cache instantly
       tasks = loadCache();
       detectRecurrence(tasks);
