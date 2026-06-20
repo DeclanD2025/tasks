@@ -7,24 +7,26 @@
   <title>Tasks</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #FAFAFA;
+      --bg: #E9E9E3;
       --surface: #FFFFFF;
-      --border: #E5E7EB;
-      --text: #111827;
-      --text-secondary: #6B7280;
-      --action: #111827;
-      --destructive: #EF4444;
-      --gold: #D4A853;
-      --amber: #F59E0B;
-      --slate: #94A3B8;
-      --radius-card: 10px;
-      --radius-input: 6px;
+      --border: #0A0A0A;
+      --text: #0A0A0A;
+      --text-secondary: #5A5A52;
+      --action: #0A0A0A;
+      --accent: #FFB400;
+      --accent-ink: #0A0A0A;
+      --destructive: #D81E1E;
+      --gold: #FFB400;
+      --amber: #FFB400;
+      --slate: #8A8A82;
+      --radius-card: 0;
+      --radius-input: 0;
       --sidebar-w: 240px;
-      --shadow-card: 0 1px 2px rgba(17, 24, 39, 0.04);
-      --shadow-modal: 0 10px 40px rgba(17, 24, 39, 0.12);
+      --shadow-card: none;
+      --shadow-modal: none;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -553,6 +555,186 @@
     @media (prefers-reduced-motion: reduce) {
       *, *::after, *::before { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
     }
+
+    /* ====================  BRUTALIST MONO  ==================== */
+    * { border-radius: 0 !important; }
+    body {
+      font-family: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+      font-size: 14px;
+      letter-spacing: -0.01em;
+      background: var(--bg);
+    }
+    body::after { content: none; display: none; }
+    input, select, textarea, button { font-family: inherit; }
+    ::selection { background: var(--accent); color: #0A0A0A; }
+
+    .brand { font-weight: 700; font-size: 18px; letter-spacing: 0.02em; text-transform: uppercase; gap: 10px; padding-bottom: 4px; }
+    .brand .dot { width: 12px; height: 12px; transform: none; background: var(--accent); border: 2px solid #0A0A0A; }
+    .dateline {
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      padding: 0 8px 16px;
+      font-weight: 500;
+    }
+    .dateline::before { content: "// "; }
+
+    #sidebar { background: var(--bg); border-right: 2px solid #0A0A0A; box-shadow: none; padding: 24px 16px; }
+    .nav-section-label {
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+      color: #0A0A0A;
+      margin: 18px 6px 8px;
+      padding: 0 0 6px;
+      border-bottom: 2px solid #0A0A0A;
+    }
+    .nav-item { color: #0A0A0A; font-weight: 500; padding: 8px; }
+    .nav-item .nav-label { text-transform: uppercase; letter-spacing: 0.02em; font-size: 13px; }
+    .nav-item:hover { background: #E0E0DA; }
+    .nav-item.active { background: #0A0A0A; color: #FFFFFF; font-weight: 600; }
+    .nav-item.active .area-dot { border-color: #FFFFFF; }
+    .nav-item .count { background: transparent; color: var(--text-secondary); border: 1.5px solid currentColor; font-weight: 600; padding: 0 6px; }
+    .nav-item.active .count { background: var(--accent); color: #0A0A0A; border-color: #0A0A0A; }
+    .area-dot { border: 1.5px solid #0A0A0A; width: 11px; height: 11px; }
+    .sidebar-footer {
+      border-top: 2px solid #0A0A0A;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    .main-header { align-items: flex-end; border-bottom: 3px solid #0A0A0A; padding-bottom: 16px; }
+    .main-title { font-weight: 700; font-size: 28px; letter-spacing: -0.02em; text-transform: uppercase; line-height: 1; }
+    .main-sub {
+      font-size: 11px;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-top: 8px;
+    }
+
+    .btn-primary {
+      background: #0A0A0A;
+      color: #FFFFFF;
+      border: 2px solid #0A0A0A;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      box-shadow: none;
+      padding: 8px 16px;
+    }
+    .btn-primary:hover { background: var(--accent); color: #0A0A0A; opacity: 1; }
+    .btn-primary:active { transform: translate(1px, 1px); }
+    .btn-ghost { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; border: 2px solid #0A0A0A; }
+    .btn-ghost:hover { background: #0A0A0A; color: #FFFFFF; }
+
+    .search-row svg { color: #0A0A0A; }
+    #search { background: #FFFFFF; border: 2px solid #0A0A0A; font-weight: 500; }
+    #search::placeholder { color: var(--text-secondary); text-transform: uppercase; font-size: 12px; letter-spacing: 0.04em; }
+    #search:focus { border-color: #0A0A0A; box-shadow: 0 0 0 3px var(--accent); }
+    .search-clear:hover { background: #0A0A0A; color: #FFFFFF; }
+
+    .area-group-header { border-bottom: 2px solid #0A0A0A; padding-bottom: 7px; margin-bottom: 12px; }
+    .area-badge {
+      font-weight: 700;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border: 1.5px solid #0A0A0A;
+      padding: 1px 8px;
+    }
+    .area-group-count { font-weight: 600; letter-spacing: 0.04em; }
+    .time-badge {
+      font-weight: 700;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: #0A0A0A;
+      color: #FFFFFF;
+      border: 2px solid #0A0A0A;
+      padding: 2px 9px;
+    }
+    .time-badge.danger { background: var(--destructive); color: #FFFFFF; border-color: var(--destructive); }
+
+    .task-card { background: #FFFFFF; border: 2px solid #0A0A0A; border-left: none; box-shadow: none; }
+    .task-card::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 10px;
+      background: var(--side, #0A0A0A);
+      border-right: 2px solid #0A0A0A;
+      pointer-events: none;
+    }
+    .task-card:hover { box-shadow: none; background: #FBFBF7; transform: translate(2px, 0); }
+    .task-card .shimmer { background: linear-gradient(100deg, transparent 30%, rgba(255,180,0,0.55) 50%, transparent 70%); background-size: 220% 100%; }
+    .task-title { font-weight: 500; font-size: 14px; letter-spacing: -0.005em; }
+    .task-title::after { background: #0A0A0A; height: 2px; }
+
+    .checkbox { border: 2px solid #0A0A0A; background: #FFFFFF; }
+    .checkbox:hover { background: var(--accent); }
+    .checkbox.checked { background: #0A0A0A; border-color: #0A0A0A; }
+    .checkbox svg path { stroke: #FFFFFF; stroke-width: 3; }
+
+    .task-due { font-weight: 500; letter-spacing: 0; color: var(--text-secondary); text-transform: uppercase; font-size: 12px; }
+    .task-due.overdue { color: var(--destructive); font-weight: 600; }
+    .m-ico { width: 12px; height: 12px; vertical-align: -1px; margin-right: 5px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+    .m-rep { font-size: 13px; line-height: 1; vertical-align: -1px; margin-right: 3px; }
+    .task-notes { font-style: normal; }
+
+    .task-card.done { border-color: #B8B8B0; }
+    .task-card.done .task-title { color: var(--text-secondary); }
+    .completed-time { text-transform: uppercase; font-size: 11px; letter-spacing: 0.04em; }
+    .reopen-btn { text-transform: uppercase; font-weight: 600; letter-spacing: 0.04em; border: 1.5px solid #0A0A0A; }
+    .reopen-btn:hover { background: #0A0A0A; color: #FFFFFF; }
+
+    .empty-state .emoji { font-family: inherit; font-weight: 700; color: #0A0A0A; opacity: 1; font-size: 40px; }
+    .empty-state .title { font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+
+    #modal-overlay { background: rgba(10, 10, 10, 0.55); }
+    .modal { background: #FFFFFF; border: 3px solid #0A0A0A; box-shadow: none; }
+    .modal-title { font-weight: 700; font-size: 18px; text-transform: uppercase; letter-spacing: -0.01em; }
+    .modal-close:hover { background: #0A0A0A; color: #FFFFFF; }
+    .field label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; color: #0A0A0A; }
+    .field input[type="text"], .field input[type="date"], .field select, .field textarea {
+      border: 2px solid #0A0A0A;
+      background: #FFFFFF;
+      font-weight: 500;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus { border-color: #0A0A0A; box-shadow: 0 0 0 3px var(--accent); }
+    .priority-toggle button { border: 2px solid #0A0A0A; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em; }
+    .priority-toggle button .pdot { border: 1px solid #0A0A0A; }
+    .priority-toggle button.active { color: #0A0A0A; border-color: #0A0A0A; background: var(--accent); }
+    .date-chips button { border: 2px solid #0A0A0A; text-transform: uppercase; font-weight: 600; font-size: 11px; letter-spacing: 0.03em; }
+    .date-chips button:hover { background: #0A0A0A; color: #FFFFFF; }
+    .btn-delete { text-transform: uppercase; font-weight: 700; letter-spacing: 0.03em; border: 2px solid var(--destructive); }
+    .btn-delete:hover { background: var(--destructive); color: #FFFFFF; }
+    .btn-delete.confirm { background: var(--destructive); color: #FFFFFF; }
+
+    #toast { background: #0A0A0A; color: #FFFFFF; border: 2px solid #0A0A0A; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    .fab { background: #0A0A0A; color: #FFFFFF; border: 2px solid #0A0A0A; box-shadow: none; }
+    #offline-banner { background: var(--accent); color: #0A0A0A; border-bottom: 2px solid #0A0A0A; text-transform: uppercase; font-weight: 600; letter-spacing: 0.04em; }
+    #mobile-nav { background: var(--bg); border-top: 2px solid #0A0A0A; }
+    #mobile-nav button { text-transform: uppercase; font-weight: 600; }
+    #mobile-nav button.active { color: #0A0A0A; }
+    #mobile-nav .mn-badge { background: var(--accent); color: #0A0A0A; border: 1px solid #0A0A0A; }
+    #loading-bar { background: var(--accent); }
+    .sheet { border: 3px solid #0A0A0A; }
+    .sheet-title { font-weight: 700; text-transform: uppercase; }
+
+    /* dashboard drag-to-prioritise */
+    .drag-grip { display: flex; align-items: center; color: var(--text-secondary); padding-left: 8px; cursor: grab; }
+    .drag-grip svg { width: 15px; height: 15px; fill: currentColor; }
+    .task-card[draggable="true"]:active { cursor: grabbing; }
+    .task-card.dragging { opacity: 0.4; }
+    .task-card.drag-before { box-shadow: inset 0 4px 0 0 var(--accent); }
+    .task-card.drag-after { box-shadow: inset 0 -4px 0 0 var(--accent); }
   </style>
 </head>
 <body>
@@ -673,21 +855,29 @@
 
     // Subtle, low-saturation accent per area: {bg, fg, dot}
     var AREA_COLORS = {
-      'Ashurst':           { bg: '#EEF2FF', fg: '#4338CA', dot: '#6366F1' },
-      'Steelmen Dispatch': { bg: '#ECFDF5', fg: '#047857', dot: '#10B981' },
-      'Fitba Foundry': { bg: '#FFF7ED', fg: '#C2410C', dot: '#F97316' },
-      'Fitness':       { bg: '#FEF2F2', fg: '#B91C1C', dot: '#EF4444' },
-      'Personal':      { bg: '#F5F3FF', fg: '#6D28D9', dot: '#8B5CF6' },
-      'OVO Dispute':   { bg: '#FEFCE8', fg: '#A16207', dot: '#EAB308' },
-      'Job Hunt':      { bg: '#ECFEFF', fg: '#0E7490', dot: '#06B6D4' },
-      'Relationship':  { bg: '#FDF2F8', fg: '#BE185D', dot: '#EC4899' }
+      'Ashurst':           { bg: '#8FD0FF', fg: '#0A0A0A', dot: '#8FD0FF' },
+      'Steelmen Dispatch': { bg: '#FFC53D', fg: '#0A0A0A', dot: '#FFC53D' },
+      'Fitba Foundry':     { bg: '#FF9E4D', fg: '#0A0A0A', dot: '#FF9E4D' },
+      'Fitness':           { bg: '#E5243B', fg: '#FFFFFF', dot: '#E5243B' },
+      'Personal':          { bg: '#D7A4FF', fg: '#0A0A0A', dot: '#D7A4FF' },
+      'OVO Dispute':       { bg: '#FFE14D', fg: '#0A0A0A', dot: '#FFE14D' },
+      'Job Hunt':          { bg: '#5FE0C8', fg: '#0A0A0A', dot: '#5FE0C8' },
+      'Relationship':      { bg: '#FF9CC2', fg: '#0A0A0A', dot: '#FF9CC2' }
     };
     var PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
-    var DEFAULT_AREA_COLOR = { bg: '#F3F4F6', fg: '#374151', dot: '#9CA3AF' };
+    var DEFAULT_AREA_COLOR = { bg: '#D8D8D2', fg: '#0A0A0A', dot: '#D8D8D2' };
 
     // Normalise a task's area; tasks with no area land in "Uncategorized".
     function taskArea(t) { return (t && t.area) ? t.area : 'Uncategorized'; }
     function areaColor(a) { return AREA_COLORS[a] || DEFAULT_AREA_COLOR; }
+    // The card's left side bar reflects the life area. Steelmen Dispatch gets a
+    // split amber/claret bar (Motherwell colours); everything else is solid.
+    function sideAccent(t) {
+      if (taskArea(t) === 'Steelmen Dispatch') {
+        return 'linear-gradient(to bottom, #FFB400 0, #FFB400 50%, #6E1423 50%, #6E1423 100%)';
+      }
+      return areaColor(taskArea(t)).dot;
+    }
 
     // The predefined AREAS plus any other areas that actually appear in the
     // data, so a task is never silently hidden because its area isn't listed.
@@ -761,6 +951,97 @@
       saveCache();
       pushInsert(nt);
       return nt;
+    }
+
+    // ---------- Manual priority order (Dashboard) ----------
+    var SORT_STEP = 1000;
+    var sortSupported = false;
+    var dragId = null;
+    function detectSort(rows) {
+      if (rows && rows.length && Object.prototype.hasOwnProperty.call(rows[0], 'sort_order')) sortSupported = true;
+    }
+    function hasOrder(t) { return typeof t.sort_order === 'number' && isFinite(t.sort_order); }
+    function byOrder(a, b) {
+      var ao = hasOrder(a) ? a.sort_order : Infinity;
+      var bo = hasOrder(b) ? b.sort_order : Infinity;
+      if (ao !== bo) return ao - bo;
+      return (a.created_at || '') < (b.created_at || '') ? -1 : 1;
+    }
+    function dashList() {
+      return todoTasks().filter(matchesSearch).slice().sort(byOrder);
+    }
+    // Seed an order value for every open task the first time the Dashboard is
+    // shown, derived from the existing priority sort.
+    function ensureDashSeed() {
+      var todos = todoTasks();
+      if (!todos.some(function (t) { return !hasOrder(t); })) return;
+      sortTasks(todos).forEach(function (t, i) {
+        if (!hasOrder(t)) {
+          t.sort_order = (i + 1) * SORT_STEP;
+          if (sortSupported) pushUpdate(t.id, { sort_order: t.sort_order });
+        }
+      });
+      saveCache();
+    }
+    function renumberAll() {
+      todoTasks().slice().sort(byOrder).forEach(function (t, i) {
+        t.sort_order = (i + 1) * SORT_STEP;
+        if (sortSupported) pushUpdate(t.id, { sort_order: t.sort_order });
+      });
+      saveCache();
+    }
+    function reorderDashboard(draggedId, targetId, placeAfter) {
+      var t = tasks.find(function (x) { return x.id === draggedId; });
+      if (!t || draggedId === targetId) return;
+      var ordered = todoTasks().slice().sort(byOrder).filter(function (x) { return x.id !== draggedId; });
+      var idx = ordered.findIndex(function (x) { return x.id === targetId; });
+      if (idx === -1) return;
+      var at = placeAfter ? idx + 1 : idx;
+      var prev = ordered[at - 1], next = ordered[at];
+      var val;
+      if (!prev) val = (hasOrder(next) ? next.sort_order : SORT_STEP) - SORT_STEP;
+      else if (!next) val = (hasOrder(prev) ? prev.sort_order : 0) + SORT_STEP;
+      else val = (prev.sort_order + next.sort_order) / 2;
+      if (prev && next && (val <= prev.sort_order || val >= next.sort_order)) {
+        renumberAll();
+        return reorderDashboard(draggedId, targetId, placeAfter);
+      }
+      t.sort_order = val;
+      saveCache();
+      if (sortSupported) pushUpdate(t.id, { sort_order: val });
+      renderDashboard();
+    }
+    function clearDragMarks() {
+      content.querySelectorAll('.drag-before, .drag-after').forEach(function (el) {
+        el.classList.remove('drag-before', 'drag-after');
+      });
+    }
+    function setupDrag(card, t) {
+      card.setAttribute('draggable', 'true');
+      var grip = document.createElement('span');
+      grip.className = 'drag-grip';
+      grip.setAttribute('aria-hidden', 'true');
+      grip.innerHTML = '<svg viewBox="0 0 16 16"><circle cx="6" cy="4" r="1.1"/><circle cx="10" cy="4" r="1.1"/><circle cx="6" cy="8" r="1.1"/><circle cx="10" cy="8" r="1.1"/><circle cx="6" cy="12" r="1.1"/><circle cx="10" cy="12" r="1.1"/></svg>';
+      card.insertBefore(grip, card.querySelector('.shimmer'));
+      card.addEventListener('dragstart', function (e) {
+        dragId = t.id; card.classList.add('dragging');
+        try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', t.id); } catch (_) {}
+      });
+      card.addEventListener('dragend', function () { dragId = null; card.classList.remove('dragging'); clearDragMarks(); });
+      card.addEventListener('dragover', function (e) {
+        if (!dragId || dragId === t.id) return;
+        e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+        var before = (e.clientY - card.getBoundingClientRect().top) < card.offsetHeight / 2;
+        clearDragMarks(); card.classList.add(before ? 'drag-before' : 'drag-after');
+      });
+      card.addEventListener('dragleave', function () { card.classList.remove('drag-before', 'drag-after'); });
+      card.addEventListener('drop', function (e) {
+        if (!dragId || dragId === t.id) return;
+        e.preventDefault();
+        var after = card.classList.contains('drag-after');
+        card.classList.remove('drag-before', 'drag-after');
+        reorderDashboard(dragId, t.id, after);
+      });
     }
 
     var sb = null;
@@ -906,6 +1187,7 @@
       var views = $('nav-views');
       views.innerHTML = '';
       views.appendChild(navItem('all', '<span class="area-dot" style="background:#111827"></span>', 'All Tasks', totalTodo));
+      views.appendChild(navItem('dashboard', '<span class="area-dot" style="background:#0A0A0A"></span>', 'Dashboard', totalTodo));
       views.appendChild(navItem('scheduled', '<span class="area-dot" style="background:#0EA5E9"></span>', 'Scheduled', datedTodos().length));
 
       var areasEl = $('nav-areas');
@@ -941,6 +1223,7 @@
       var nav = $('mobile-nav');
       var items = [
         { view: 'all', label: 'All', badge: totalTodo, icon: '<path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>' },
+        { view: 'dashboard', label: 'Priority', badge: 0, icon: '<path d="M4 6h16M4 12h11M4 18h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>' },
         { view: 'scheduled', label: 'Scheduled', badge: datedTodos().length, icon: '<rect x="3" y="4" width="18" height="17" rx="2" stroke="currentColor" stroke-width="2" fill="none"/><path d="M3 9h18M8 2v4M16 2v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>' },
         { view: 'Personal', label: 'Areas', badge: 0, icon: '<path d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v6H4zM14 15h6v6h-6z" stroke="currentColor" stroke-width="2" fill="none"/>' },
         { view: 'completed', label: 'Done', badge: doneCount, icon: '<path d="M5 12l4 4L19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' }
@@ -993,6 +1276,7 @@
       renderNav();
       if (currentView === 'completed') return renderCompleted();
       if (currentView === 'scheduled') return renderScheduled();
+      if (currentView === 'dashboard') return renderDashboard();
       renderActive();
     }
 
@@ -1020,11 +1304,11 @@
 
       if (totalShown === 0) {
         if (searchQuery) {
-          content.appendChild(emptyState('🔍', 'No matches.', 'No tasks match “' + searchQuery + '”.'));
+          content.appendChild(emptyState('∅', 'No matches.', 'No tasks match “' + searchQuery + '”.'));
         } else if (currentView === 'all') {
-          content.appendChild(emptyState('🗒️', 'Nothing on the list.', 'Add your first task to get started.'));
+          content.appendChild(emptyState('∅', 'Nothing on the list.', 'Add your first task to get started.'));
         } else {
-          content.appendChild(emptyState('✨', 'All clear in ' + currentView + '.', 'No tasks here right now.'));
+          content.appendChild(emptyState('∅', 'All clear in ' + currentView + '.', 'No tasks here right now.'));
         }
         return;
       }
@@ -1077,9 +1361,9 @@
 
       if (total === 0) {
         if (searchQuery) {
-          content.appendChild(emptyState('🔍', 'No matches.', 'No scheduled tasks match “' + searchQuery + '”.'));
+          content.appendChild(emptyState('∅', 'No matches.', 'No scheduled tasks match “' + searchQuery + '”.'));
         } else {
-          content.appendChild(emptyState('📅', 'Nothing scheduled.', 'Give a task a due date and it’ll show up here.'));
+          content.appendChild(emptyState('∅', 'Nothing scheduled.', 'Give a task a due date and it’ll show up here.'));
         }
         return;
       }
@@ -1106,8 +1390,27 @@
       return wrap;
     }
 
+    function renderDashboard() {
+      $('view-title').textContent = 'Dashboard';
+      ensureDashSeed();
+      var list = dashList();
+      $('view-sub').textContent = list.length
+        ? ('Drag to prioritise · ' + list.length + (list.length === 1 ? ' task' : ' tasks'))
+        : '';
+      content.innerHTML = '';
+      if (list.length === 0) {
+        content.appendChild(emptyState('∅', searchQuery ? 'No matches.' : 'Nothing to prioritise.',
+          searchQuery ? ('No tasks match “' + searchQuery + '”.') : 'Add a task to get started.'));
+        return;
+      }
+      var listEl = document.createElement('div');
+      listEl.className = 'task-list';
+      list.forEach(function (t) { listEl.appendChild(taskCard(t, { showArea: true, drag: true })); });
+      content.appendChild(listEl);
+    }
+
     function areaGroup(area, items) {
-      var c = AREA_COLORS[area] || { bg: '#F3F4F6', fg: '#374151' };
+      var c = AREA_COLORS[area] || { bg: '#D8D8D2', fg: '#0A0A0A' };
       var wrap = document.createElement('div');
       wrap.className = 'area-group';
       var header = document.createElement('div');
@@ -1137,6 +1440,7 @@
       card.className = 'task-card prio-' + (t.priority || 'medium');
       card.setAttribute('data-id', t.id);
       card.setAttribute('tabindex', '0');
+      card.style.setProperty('--side', sideAccent(t));
 
       var checkbox = document.createElement('button');
       checkbox.className = 'checkbox';
@@ -1157,10 +1461,10 @@
       }
       var due = fmtDue(t.due_date);
       if (due) {
-        meta += '<span class="task-due' + (due.overdue ? ' overdue' : '') + '">📅 ' + esc(due.label) + '</span>';
+        meta += '<span class="task-due' + (due.overdue ? ' overdue' : '') + '"><svg class="m-ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.2" y="3.3" width="11.6" height="10.5" rx="1.4"/><path d="M2.2 6.5h11.6M5.8 2v2.7M10.2 2v2.7"/></svg>' + esc(due.label) + '</span>';
       }
       if (t.recurrence) {
-        meta += '<span class="task-due">🔁 ' + esc(RECUR_LABEL[t.recurrence] || 'Repeats') + '</span>';
+        meta += '<span class="task-due"><span class="m-rep">↻</span>' + esc(RECUR_LABEL[t.recurrence] || 'Repeats') + '</span>';
       }
       body.innerHTML = titleHtml + (meta ? '<div class="task-meta">' + meta + '</div>' : '');
       if (t.notes) {
@@ -1181,6 +1485,7 @@
       card.addEventListener('keydown', function (e) {
         if (e.key === 'Enter') openModal(t);
       });
+      if (opts.drag) setupDrag(card, t);
       return card;
     }
 
@@ -1201,9 +1506,9 @@
 
       if (done.length === 0) {
         if (searchQuery) {
-          content.appendChild(emptyState('🔍', 'No matches.', 'No completed tasks match “' + searchQuery + '”.'));
+          content.appendChild(emptyState('∅', 'No matches.', 'No completed tasks match “' + searchQuery + '”.'));
         } else {
-          content.appendChild(emptyState('🌱', 'Nothing completed yet.', 'Finished tasks will appear here.'));
+          content.appendChild(emptyState('∅', 'Nothing completed yet.', 'Finished tasks will appear here.'));
         }
         return;
       }
@@ -1226,7 +1531,8 @@
     function completedCard(t) {
       var card = document.createElement('div');
       card.className = 'task-card done';
-      var c = AREA_COLORS[t.area] || { bg: '#F3F4F6', fg: '#374151' };
+      card.style.setProperty('--side', sideAccent(t));
+      var c = AREA_COLORS[t.area] || { bg: '#D8D8D2', fg: '#0A0A0A' };
       var body = document.createElement('div');
       body.className = 'task-body';
       body.innerHTML = '<span class="task-title">' + esc(t.title) + '</span>' +
@@ -1407,6 +1713,7 @@
         created_at: t.created_at, completed_at: t.completed_at
       };
       if (recurrenceSupported) row.recurrence = t.recurrence || null;
+      if (sortSupported) row.sort_order = hasOrder(t) ? t.sort_order : null;
       return row;
     }
 
@@ -1439,6 +1746,7 @@
       // 1. Render from cache instantly
       tasks = loadCache();
       detectRecurrence(tasks);
+      detectSort(tasks);
       render();
 
       // 2. Sync from Supabase
@@ -1451,6 +1759,7 @@
         if (res.error || !res.data) return;
         tasks = res.data;
         detectRecurrence(tasks);
+      detectSort(tasks);
         saveCache();
         render();
       }).catch(function () { clearTimeout(slow); showLoading(false); });
@@ -1625,6 +1934,16 @@
     });
     window.addEventListener('offline', function () { document.body.classList.add('offline'); });
     if (!navigator.onLine) document.body.classList.add('offline');
+
+    // Masthead dateline under the brand
+    (function () {
+      var brand = document.querySelector('.brand');
+      if (!brand) return;
+      var dl = document.createElement('div');
+      dl.className = 'dateline';
+      dl.textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+      brand.parentNode.insertBefore(dl, brand.nextSibling);
+    })();
 
     // ---------- Go ----------
     initialLoad();
