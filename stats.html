@@ -56,217 +56,360 @@
 
   <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script type="text/babel" data-presets="react">
-    const { useState, useEffect } = React;
+  <script>
+const {
+  useState,
+  useEffect
+} = React;
+const SB_URL = 'https://hpgalybhcztwzfqoluts.supabase.co';
+const SB_KEY = 'sb_publishable_DYz9X1kXSCe15q3xHZ0PMg_R9A2JwSt';
+const AREA_COLORS = {
+  'Ashurst': '#8FD0FF',
+  'Steelmen Dispatch': '#FFC53D',
+  'Fitba Foundry': '#FF9E4D',
+  'Fitness': '#E5243B',
+  'Personal': '#D7A4FF',
+  'OVO Dispute': '#FFE14D',
+  'Job Hunt': '#5FE0C8',
+  'Relationship': '#FF9CC2'
+};
+const areaColor = a => AREA_COLORS[a] || '#D8D8D2';
+const DAY = 86400000;
+const pad = n => String(n).padStart(2, '0');
+const dayKey = d => {
+  const x = new Date(d);
+  return x.getFullYear() + '-' + pad(x.getMonth() + 1) + '-' + pad(x.getDate());
+};
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function readEvents() {
+  try {
+    return JSON.parse(localStorage.getItem('td_events') || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+function compute(tasks, events) {
+  const open = tasks.filter(t => t.status !== 'done');
+  const done = tasks.filter(t => t.status === 'done');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const overdue = open.filter(t => t.due_date && new Date(t.due_date + 'T00:00:00') < today).length;
 
-    const SB_URL = 'https://hpgalybhcztwzfqoluts.supabase.co';
-    const SB_KEY = 'sb_publishable_DYz9X1kXSCe15q3xHZ0PMg_R9A2JwSt';
-
-    const AREA_COLORS = {
-      'Ashurst': '#8FD0FF', 'Steelmen Dispatch': '#FFC53D', 'Fitba Foundry': '#FF9E4D',
-      'Fitness': '#E5243B', 'Personal': '#D7A4FF', 'OVO Dispute': '#FFE14D',
-      'Job Hunt': '#5FE0C8', 'Relationship': '#FF9CC2'
+  // Merge completions: current done tasks + logged completions for tasks since deleted.
+  const compMap = new Map();
+  done.forEach(t => {
+    if (t.completed_at) compMap.set(t.id, {
+      ts: t.completed_at,
+      area: t.area
+    });
+  });
+  events.forEach(e => {
+    if (e.t === 'complete' && e.id && !compMap.has(e.id)) compMap.set(e.id, {
+      ts: e.ts,
+      area: e.area
+    });
+  });
+  const comps = [...compMap.values()];
+  const createMap = new Map();
+  tasks.forEach(t => {
+    if (t.created_at) createMap.set(t.id, {
+      ts: t.created_at,
+      area: t.area
+    });
+  });
+  events.forEach(e => {
+    if (e.t === 'create' && e.id && !createMap.has(e.id)) createMap.set(e.id, {
+      ts: e.ts,
+      area: e.area
+    });
+  });
+  const creates = [...createMap.values()];
+  const opens = events.filter(e => e.t === 'open');
+  const N = 56;
+  const days = [];
+  for (let i = N - 1; i >= 0; i--) days.push(dayKey(new Date(today.getTime() - i * DAY)));
+  const idx = {};
+  days.forEach((d, i) => idx[d] = i);
+  const series = recs => {
+    const arr = new Array(N).fill(0);
+    recs.forEach(r => {
+      const k = dayKey(r.ts);
+      if (k in idx) arr[idx[k]]++;
+    });
+    return arr;
+  };
+  const hours = new Array(24).fill(0),
+    dows = new Array(7).fill(0);
+  comps.forEach(c => {
+    const d = new Date(c.ts);
+    hours[d.getHours()]++;
+    dows[d.getDay()]++;
+  });
+  const areas = {};
+  open.forEach(t => {
+    const a = t.area || 'Uncategorized';
+    (areas[a] = areas[a] || {
+      open: 0,
+      done: 0
+    }).open++;
+  });
+  comps.forEach(c => {
+    const a = c.area || 'Uncategorized';
+    (areas[a] = areas[a] || {
+      open: 0,
+      done: 0
+    }).done++;
+  });
+  const areaRows = Object.keys(areas).map(a => ({
+    area: a,
+    open: areas[a].open,
+    done: areas[a].done
+  })).sort((x, y) => y.open + y.done - (x.open + x.done));
+  const compDays = new Set(comps.map(c => dayKey(c.ts)));
+  let streak = 0;
+  for (let i = 0;; i++) {
+    if (compDays.has(dayKey(new Date(today.getTime() - i * DAY)))) streak++;else break;
+  }
+  const cutoff = today.getTime() - 30 * DAY;
+  const done30 = comps.filter(c => new Date(c.ts).getTime() >= cutoff).length;
+  const add30 = creates.filter(c => new Date(c.ts).getTime() >= cutoff).length;
+  let ttSum = 0,
+    ttN = 0;
+  done.forEach(t => {
+    if (t.created_at && t.completed_at) {
+      ttSum += new Date(t.completed_at) - new Date(t.created_at);
+      ttN++;
+    }
+  });
+  const avgDays = ttN ? ttSum / ttN / DAY : null;
+  const totalDone = comps.length;
+  const rate = totalDone + open.length ? Math.round(totalDone / (totalDone + open.length) * 100) : 0;
+  const maxH = Math.max(...hours),
+    maxD = Math.max(...dows);
+  return {
+    openCount: open.length,
+    totalDone,
+    overdue,
+    rate,
+    streak,
+    done30,
+    add30,
+    completedSeries: series(comps),
+    addedSeries: series(creates),
+    opensSeries: series(opens),
+    days,
+    hours,
+    dows,
+    areaRows,
+    avgDays,
+    hasOpens: opens.length > 0,
+    peakHour: maxH > 0 ? hours.indexOf(maxH) : null,
+    peakDow: maxD > 0 ? dows.indexOf(maxD) : null
+  };
+}
+function Stat({
+  label,
+  value,
+  sub
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    className: "stat"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "stat-label"
+  }, label), /*#__PURE__*/React.createElement("div", {
+    className: "stat-value"
+  }, value), sub ? /*#__PURE__*/React.createElement("div", {
+    className: "stat-sub"
+  }, sub) : null);
+}
+function Bars({
+  values,
+  color,
+  labels,
+  height
+}) {
+  height = height || 100;
+  const max = Math.max(1, ...values);
+  const n = values.length,
+    gap = n > 30 ? 1.5 : 4,
+    w = 760;
+  const bw = (w - gap * (n - 1)) / n;
+  return /*#__PURE__*/React.createElement("svg", {
+    className: "chart",
+    viewBox: `0 0 ${w} ${height + 20}`
+  }, values.map((v, i) => {
+    const bh = v / max * height;
+    return /*#__PURE__*/React.createElement("rect", {
+      key: i,
+      x: i * (bw + gap),
+      y: height - bh,
+      width: bw,
+      height: bh,
+      fill: v ? color : '#D8D8D2'
+    });
+  }), labels ? labels.map((lb, i) => lb ? /*#__PURE__*/React.createElement("text", {
+    key: 't' + i,
+    x: i * (bw + gap) + bw / 2,
+    y: height + 14,
+    textAnchor: "middle",
+    className: "clabel"
+  }, lb) : null) : null);
+}
+function AreaRow({
+  r,
+  max
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    className: "arow"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "arow-name"
+  }, r.area), /*#__PURE__*/React.createElement("div", {
+    className: "arow-track"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "arow-bar",
+    style: {
+      width: r.open / max * 100 + '%',
+      background: areaColor(r.area)
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "arow-num"
+  }, r.open, " open · ", r.done, " done"));
+}
+function App() {
+  const [data, setData] = useState({
+    loading: true
+  });
+  useEffect(() => {
+    let alive = true;
+    const sb = window.supabase.createClient(SB_URL, SB_KEY);
+    Promise.all([sb.from('tasks').select('*'), sb.from('events').select('type,ts,task_id,area,priority').order('ts', {
+      ascending: true
+    }).limit(10000)]).then(([tres, eres]) => {
+      if (!alive) return;
+      const remote = !eres.error && eres.data ? eres.data.map(r => ({
+        t: r.type,
+        ts: r.ts,
+        id: r.task_id,
+        area: r.area,
+        priority: r.priority
+      })) : null;
+      const events = remote && remote.length ? remote : readEvents();
+      setData({
+        loading: false,
+        tasks: tres.data || [],
+        events,
+        error: tres.error
+      });
+    }).catch(e => {
+      if (alive) setData({
+        loading: false,
+        tasks: [],
+        events: readEvents(),
+        error: e
+      });
+    });
+    return () => {
+      alive = false;
     };
-    const areaColor = a => AREA_COLORS[a] || '#D8D8D2';
-    const DAY = 86400000;
-    const pad = n => String(n).padStart(2, '0');
-    const dayKey = d => { const x = new Date(d); return x.getFullYear() + '-' + pad(x.getMonth() + 1) + '-' + pad(x.getDate()); };
-    const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-    function readEvents() {
-      try { return JSON.parse(localStorage.getItem('td_events') || '[]'); } catch (e) { return []; }
+  }, []);
+  if (data.loading) return /*#__PURE__*/React.createElement("div", {
+    className: "muted",
+    style: {
+      padding: '40px 0'
     }
-
-    function compute(tasks, events) {
-      const open = tasks.filter(t => t.status !== 'done');
-      const done = tasks.filter(t => t.status === 'done');
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      const overdue = open.filter(t => t.due_date && new Date(t.due_date + 'T00:00:00') < today).length;
-
-      // Merge completions: current done tasks + logged completions for tasks since deleted.
-      const compMap = new Map();
-      done.forEach(t => { if (t.completed_at) compMap.set(t.id, { ts: t.completed_at, area: t.area }); });
-      events.forEach(e => { if (e.t === 'complete' && e.id && !compMap.has(e.id)) compMap.set(e.id, { ts: e.ts, area: e.area }); });
-      const comps = [...compMap.values()];
-
-      const createMap = new Map();
-      tasks.forEach(t => { if (t.created_at) createMap.set(t.id, { ts: t.created_at, area: t.area }); });
-      events.forEach(e => { if (e.t === 'create' && e.id && !createMap.has(e.id)) createMap.set(e.id, { ts: e.ts, area: e.area }); });
-      const creates = [...createMap.values()];
-
-      const opens = events.filter(e => e.t === 'open');
-
-      const N = 56;
-      const days = [];
-      for (let i = N - 1; i >= 0; i--) days.push(dayKey(new Date(today.getTime() - i * DAY)));
-      const idx = {}; days.forEach((d, i) => idx[d] = i);
-      const series = recs => { const arr = new Array(N).fill(0); recs.forEach(r => { const k = dayKey(r.ts); if (k in idx) arr[idx[k]]++; }); return arr; };
-
-      const hours = new Array(24).fill(0), dows = new Array(7).fill(0);
-      comps.forEach(c => { const d = new Date(c.ts); hours[d.getHours()]++; dows[d.getDay()]++; });
-
-      const areas = {};
-      open.forEach(t => { const a = t.area || 'Uncategorized'; (areas[a] = areas[a] || { open: 0, done: 0 }).open++; });
-      comps.forEach(c => { const a = c.area || 'Uncategorized'; (areas[a] = areas[a] || { open: 0, done: 0 }).done++; });
-      const areaRows = Object.keys(areas).map(a => ({ area: a, open: areas[a].open, done: areas[a].done }))
-        .sort((x, y) => (y.open + y.done) - (x.open + x.done));
-
-      const compDays = new Set(comps.map(c => dayKey(c.ts)));
-      let streak = 0;
-      for (let i = 0; ; i++) { if (compDays.has(dayKey(new Date(today.getTime() - i * DAY)))) streak++; else break; }
-
-      const cutoff = today.getTime() - 30 * DAY;
-      const done30 = comps.filter(c => new Date(c.ts).getTime() >= cutoff).length;
-      const add30 = creates.filter(c => new Date(c.ts).getTime() >= cutoff).length;
-
-      let ttSum = 0, ttN = 0;
-      done.forEach(t => { if (t.created_at && t.completed_at) { ttSum += (new Date(t.completed_at) - new Date(t.created_at)); ttN++; } });
-      const avgDays = ttN ? (ttSum / ttN / DAY) : null;
-
-      const totalDone = comps.length;
-      const rate = (totalDone + open.length) ? Math.round(totalDone / (totalDone + open.length) * 100) : 0;
-      const maxH = Math.max(...hours), maxD = Math.max(...dows);
-
-      return {
-        openCount: open.length, totalDone, overdue, rate, streak, done30, add30,
-        completedSeries: series(comps), addedSeries: series(creates), opensSeries: series(opens),
-        days, hours, dows, areaRows, avgDays, hasOpens: opens.length > 0,
-        peakHour: maxH > 0 ? hours.indexOf(maxH) : null, peakDow: maxD > 0 ? dows.indexOf(maxD) : null
-      };
+  }, "Loading…");
+  const s = compute(data.tasks, data.events);
+  const dayLabels = s.days.map((d, i) => i % 14 === 0 ? d.slice(5) : '');
+  const areaMax = Math.max(1, ...s.areaRows.map(r => r.open));
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("header", {
+    className: "top"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h1", null, "STATS"), /*#__PURE__*/React.createElement("div", {
+    className: "muted small"
+  }, new Date().toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long'
+  }).toUpperCase())), /*#__PURE__*/React.createElement("a", {
+    className: "back",
+    href: "./index.html"
+  }, "← Tasks")), data.error ? /*#__PURE__*/React.createElement("div", {
+    className: "note",
+    style: {
+      marginBottom: 24
     }
-
-    function Stat({ label, value, sub }) {
-      return (
-        <div className="stat">
-          <div className="stat-label">{label}</div>
-          <div className="stat-value">{value}</div>
-          {sub ? <div className="stat-sub">{sub}</div> : null}
-        </div>
-      );
+  }, "Couldn’t reach the database — showing what’s cached locally.") : null, /*#__PURE__*/React.createElement("div", {
+    className: "grid"
+  }, /*#__PURE__*/React.createElement(Stat, {
+    label: "Completed",
+    value: s.totalDone,
+    sub: "all time"
+  }), /*#__PURE__*/React.createElement(Stat, {
+    label: "Open",
+    value: s.openCount,
+    sub: s.overdue + ' overdue'
+  }), /*#__PURE__*/React.createElement(Stat, {
+    label: "Done rate",
+    value: s.rate + '%'
+  }), /*#__PURE__*/React.createElement(Stat, {
+    label: "Streak",
+    value: s.streak + 'd',
+    sub: "days in a row"
+  }), /*#__PURE__*/React.createElement(Stat, {
+    label: "Done · 30d",
+    value: s.done30,
+    sub: (s.done30 / 30).toFixed(1) + '/day'
+  }), /*#__PURE__*/React.createElement(Stat, {
+    label: "Added · 30d",
+    value: s.add30
+  })), /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("h2", null, "Completed / day — 8 weeks"), /*#__PURE__*/React.createElement(Bars, {
+    values: s.completedSeries,
+    color: "#0A0A0A",
+    labels: dayLabels
+  })), /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("h2", null, "Added / day"), /*#__PURE__*/React.createElement(Bars, {
+    values: s.addedSeries,
+    color: "#FFB400",
+    labels: dayLabels
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "two"
+  }, /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("h2", null, "When you work — hour"), /*#__PURE__*/React.createElement(Bars, {
+    values: s.hours,
+    color: "#0A0A0A",
+    height: 80,
+    labels: s.hours.map((_, i) => i % 6 === 0 ? pad(i) : '')
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "muted small",
+    style: {
+      marginTop: 6
     }
-
-    function Bars({ values, color, labels, height }) {
-      height = height || 100;
-      const max = Math.max(1, ...values);
-      const n = values.length, gap = n > 30 ? 1.5 : 4, w = 760;
-      const bw = (w - gap * (n - 1)) / n;
-      return (
-        <svg className="chart" viewBox={`0 0 ${w} ${height + 20}`}>
-          {values.map((v, i) => {
-            const bh = v / max * height;
-            return <rect key={i} x={i * (bw + gap)} y={height - bh} width={bw} height={bh} fill={v ? color : '#D8D8D2'} />;
-          })}
-          {labels ? labels.map((lb, i) => lb
-            ? <text key={'t' + i} x={i * (bw + gap) + bw / 2} y={height + 14} textAnchor="middle" className="clabel">{lb}</text>
-            : null) : null}
-        </svg>
-      );
+  }, s.peakHour != null ? 'Peak: ' + pad(s.peakHour) + ':00' : 'No data yet')), /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("h2", null, "By weekday"), /*#__PURE__*/React.createElement(Bars, {
+    values: s.dows,
+    color: "#0A0A0A",
+    height: 80,
+    labels: DOW.map(d => d[0])
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "muted small",
+    style: {
+      marginTop: 6
     }
-
-    function AreaRow({ r, max }) {
-      return (
-        <div className="arow">
-          <div className="arow-name">{r.area}</div>
-          <div className="arow-track"><div className="arow-bar" style={{ width: (r.open / max * 100) + '%', background: areaColor(r.area) }} /></div>
-          <div className="arow-num">{r.open} open · {r.done} done</div>
-        </div>
-      );
-    }
-
-    function App() {
-      const [data, setData] = useState({ loading: true });
-      useEffect(() => {
-        let alive = true;
-        const sb = window.supabase.createClient(SB_URL, SB_KEY);
-        Promise.all([
-          sb.from('tasks').select('*'),
-          sb.from('events').select('type,ts,task_id,area,priority').order('ts', { ascending: true }).limit(10000)
-        ]).then(([tres, eres]) => {
-          if (!alive) return;
-          const remote = (!eres.error && eres.data)
-            ? eres.data.map(r => ({ t: r.type, ts: r.ts, id: r.task_id, area: r.area, priority: r.priority }))
-            : null;
-          const events = (remote && remote.length) ? remote : readEvents();
-          setData({ loading: false, tasks: tres.data || [], events, error: tres.error });
-        }).catch(e => { if (alive) setData({ loading: false, tasks: [], events: readEvents(), error: e }); });
-        return () => { alive = false; };
-      }, []);
-
-      if (data.loading) return <div className="muted" style={{ padding: '40px 0' }}>Loading…</div>;
-      const s = compute(data.tasks, data.events);
-      const dayLabels = s.days.map((d, i) => (i % 14 === 0) ? d.slice(5) : '');
-      const areaMax = Math.max(1, ...s.areaRows.map(r => r.open));
-
-      return (
-        <div>
-          <header className="top">
-            <div>
-              <h1>STATS</h1>
-              <div className="muted small">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}</div>
-            </div>
-            <a className="back" href="./index.html">← Tasks</a>
-          </header>
-
-          {data.error ? <div className="note" style={{ marginBottom: 24 }}>Couldn’t reach the database — showing what’s cached locally.</div> : null}
-
-          <div className="grid">
-            <Stat label="Completed" value={s.totalDone} sub="all time" />
-            <Stat label="Open" value={s.openCount} sub={s.overdue + ' overdue'} />
-            <Stat label="Done rate" value={s.rate + '%'} />
-            <Stat label="Streak" value={s.streak + 'd'} sub="days in a row" />
-            <Stat label="Done · 30d" value={s.done30} sub={(s.done30 / 30).toFixed(1) + '/day'} />
-            <Stat label="Added · 30d" value={s.add30} />
-          </div>
-
-          <section>
-            <h2>Completed / day — 8 weeks</h2>
-            <Bars values={s.completedSeries} color="#0A0A0A" labels={dayLabels} />
-          </section>
-
-          <section>
-            <h2>Added / day</h2>
-            <Bars values={s.addedSeries} color="#FFB400" labels={dayLabels} />
-          </section>
-
-          <div className="two">
-            <section>
-              <h2>When you work — hour</h2>
-              <Bars values={s.hours} color="#0A0A0A" height={80} labels={s.hours.map((_, i) => i % 6 === 0 ? pad(i) : '')} />
-              <div className="muted small" style={{ marginTop: 6 }}>{s.peakHour != null ? 'Peak: ' + pad(s.peakHour) + ':00' : 'No data yet'}</div>
-            </section>
-            <section>
-              <h2>By weekday</h2>
-              <Bars values={s.dows} color="#0A0A0A" height={80} labels={DOW.map(d => d[0])} />
-              <div className="muted small" style={{ marginTop: 6 }}>{s.peakDow != null ? 'Peak: ' + DOW[s.peakDow] : 'No data yet'}</div>
-            </section>
-          </div>
-
-          <section>
-            <h2>Usage — opens / day</h2>
-            {s.hasOpens
-              ? <Bars values={s.opensSeries} color="#0A0A0A" labels={dayLabels} />
-              : <div className="note">Usage tracking starts now. Open the app over a few days and this fills in.</div>}
-          </section>
-
-          <section>
-            <h2>By area</h2>
-            {s.areaRows.length
-              ? s.areaRows.map(r => <AreaRow key={r.area} r={r} max={areaMax} />)
-              : <div className="muted small">No tasks yet.</div>}
-          </section>
-
-          <div className="foot">
-            {s.avgDays != null ? 'Avg time to complete: ' + (s.avgDays < 1 ? Math.round(s.avgDays * 24) + 'h' : s.avgDays.toFixed(1) + 'd') + ' · ' : ''}
-            {s.totalDone} done · {s.openCount} open
-          </div>
-        </div>
-      );
-    }
-
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  }, s.peakDow != null ? 'Peak: ' + DOW[s.peakDow] : 'No data yet'))), /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("h2", null, "Usage — opens / day"), s.hasOpens ? /*#__PURE__*/React.createElement(Bars, {
+    values: s.opensSeries,
+    color: "#0A0A0A",
+    labels: dayLabels
+  }) : /*#__PURE__*/React.createElement("div", {
+    className: "note"
+  }, "Usage tracking starts now. Open the app over a few days and this fills in.")), /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("h2", null, "By area"), s.areaRows.length ? s.areaRows.map(r => /*#__PURE__*/React.createElement(AreaRow, {
+    key: r.area,
+    r: r,
+    max: areaMax
+  })) : /*#__PURE__*/React.createElement("div", {
+    className: "muted small"
+  }, "No tasks yet.")), /*#__PURE__*/React.createElement("div", {
+    className: "foot"
+  }, s.avgDays != null ? 'Avg time to complete: ' + (s.avgDays < 1 ? Math.round(s.avgDays * 24) + 'h' : s.avgDays.toFixed(1) + 'd') + ' · ' : '', s.totalDone, " done · ", s.openCount, " open"));
+}
+ReactDOM.createRoot(document.getElementById('root')).render(/*#__PURE__*/React.createElement(App, null));
   </script>
 </body>
 </html>
