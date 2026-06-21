@@ -904,7 +904,7 @@
     // Count todo tasks per (normalised) area.
     function areaCounts() {
       var counts = {};
-      todoTasks().forEach(function (t) {
+      activeTodos().forEach(function (t) {
         var a = taskArea(t);
         counts[a] = (counts[a] || 0) + 1;
       });
@@ -984,7 +984,7 @@
       return (a.created_at || '') < (b.created_at || '') ? -1 : 1;
     }
     function dashList() {
-      return todoTasks().filter(matchesSearch).slice().sort(byOrder);
+      return activeTodos().filter(matchesSearch).slice().sort(byOrder);
     }
     // Seed an order value for every open task the first time the Dashboard is
     // shown, derived from the existing priority sort.
@@ -1229,6 +1229,21 @@
     function todoTasks() { return tasks.filter(function (t) { return t.status !== 'done'; }); }
     function doneTasks() { return tasks.filter(function (t) { return t.status === 'done'; }); }
 
+    // A recurring task's next occurrence is created the moment you complete the
+    // current one. To preserve the sense of completion, keep that future
+    // occurrence out of the working lists (All Tasks, areas, Dashboard) until
+    // its due date actually arrives. It still lives in the data and shows up in
+    // the Scheduled view, so nothing is lost — it just reappears when due.
+    function isHiddenUntilDue(t) {
+      if (!t.recurrence || !t.due_date) return false;
+      var d = new Date(t.due_date + 'T00:00:00');
+      var today = new Date(); today.setHours(0, 0, 0, 0);
+      return d > today;
+    }
+    function activeTodos() {
+      return todoTasks().filter(function (t) { return !isHiddenUntilDue(t); });
+    }
+
     function matchesSearch(t) {
       if (!searchQuery) return true;
       var q = searchQuery.toLowerCase();
@@ -1309,7 +1324,7 @@
     // ---------- Rendering: sidebar ----------
     function renderNav() {
       var counts = areaCounts();
-      var totalTodo = todoTasks().length;
+      var totalTodo = activeTodos().length;
       var doneCount = doneTasks().length;
 
       var views = $('nav-views');
@@ -1376,7 +1391,7 @@
       var counts = areaCounts();
       var nav = $('sheet-areas');
       nav.innerHTML = '';
-      nav.appendChild(sheetItem('all', '#111827', 'All Tasks', todoTasks().length));
+      nav.appendChild(sheetItem('all', '#111827', 'All Tasks', activeTodos().length));
       effectiveAreas().forEach(function (a) {
         nav.appendChild(sheetItem(a, areaColor(a).dot, a, counts[a] || 0));
       });
@@ -1412,7 +1427,7 @@
       var title = currentView === 'all' ? 'All Tasks' : currentView;
       $('view-title').textContent = title;
 
-      var list = todoTasks().filter(matchesSearch);
+      var list = activeTodos().filter(matchesSearch);
       var grouped;
       if (currentView === 'all') {
         grouped = effectiveAreas().map(function (a) {
