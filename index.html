@@ -188,6 +188,7 @@
       background: #EFF6FF;
       color: #1D4ED8;
     }
+    .roll-btn { padding: 4px 10px; font-size: 12px; }
     .time-badge.danger { background: #FEF2F2; color: #B91C1C; }
     .area-group-count { font-size: 12px; color: var(--text-secondary); }
 
@@ -733,9 +734,20 @@
     .drag-grip { display: flex; align-items: center; color: var(--text-secondary); padding: 4px 4px 4px 8px; cursor: grab; touch-action: none; }
     .drag-grip:active { cursor: grabbing; }
     .drag-grip svg { width: 15px; height: 15px; fill: currentColor; }
-    .task-card.dragging { opacity: 0.4; cursor: grabbing; }
-    .task-card.drag-before { box-shadow: inset 0 4px 0 0 var(--accent); }
-    .task-card.drag-after { box-shadow: inset 0 -4px 0 0 var(--accent); }
+    /* While dragging, the card is lifted out of the list and follows the
+       pointer; a dashed slot (the placeholder) shows where it will drop. */
+    .task-card.dragging {
+      cursor: grabbing;
+      opacity: 0.97;
+      box-shadow: 5px 9px 0 0 rgba(10,10,10,0.16), 0 16px 32px rgba(10,10,10,0.22);
+      transform: rotate(-1.2deg) scale(1.02);
+    }
+    .drag-placeholder {
+      border: 2px dashed var(--accent);
+      background: rgba(255,180,0,0.12);
+      border-radius: var(--radius-card);
+      box-sizing: border-box;
+    }
     .stats-link { text-decoration: none; }
   </style>
 </head>
@@ -904,7 +916,7 @@
     // Count todo tasks per (normalised) area.
     function areaCounts() {
       var counts = {};
-      todoTasks().forEach(function (t) {
+      activeTodos().forEach(function (t) {
         var a = taskArea(t);
         counts[a] = (counts[a] || 0) + 1;
       });
@@ -984,7 +996,7 @@
       return (a.created_at || '') < (b.created_at || '') ? -1 : 1;
     }
     function dashList() {
-      return todoTasks().filter(matchesSearch).slice().sort(byOrder);
+      return activeTodos().filter(matchesSearch).slice().sort(byOrder);
     }
     // Seed an order value for every open task the first time the Dashboard is
     // shown, derived from the existing priority sort.
@@ -1027,11 +1039,6 @@
       if (sortSupported) pushUpdate(t.id, { sort_order: val });
       renderDashboard();
     }
-    function clearDragMarks() {
-      content.querySelectorAll('.drag-before, .drag-after').forEach(function (el) {
-        el.classList.remove('drag-before', 'drag-after');
-      });
-    }
     // Pointer-based drag so it works with mouse, touch and pen alike.
     function setupDrag(card, t) {
       var grip = document.createElement('span');
@@ -1042,34 +1049,63 @@
       card.style.cursor = 'grab';
 
       var pending = false, active = false, moved = false, startX = 0, startY = 0, pid = null;
+      var placeholder = null, grabX = 0, grabY = 0, lastX = 0, lastY = 0;
 
-      // Task card under a screen point, ignoring the one being dragged.
+      // Real, in-flow task card under a screen point (the lifted card has
+      // pointer-events disabled, and the placeholder isn't a .task-card, so
+      // neither is ever returned here).
       function cardAt(x, y) {
-        card.style.pointerEvents = 'none';
         var el = document.elementFromPoint(x, y);
-        card.style.pointerEvents = '';
-        return el && el.closest ? el.closest('.task-card') : null;
+        var c = el && el.closest ? el.closest('.task-card') : null;
+        return c === card ? null : c;
       }
-      function beginDrag() {
+      // Keep the lifted card pinned under the pointer.
+      function positionCard() {
+        card.style.left = (lastX - grabX) + 'px';
+        card.style.top = (lastY - grabY) + 'px';
+      }
+      function beginDrag(x, y) {
         active = true; pending = false; dragId = t.id;
-        try { card.setPointerCapture(pid); } catch (_) {}
-        card.classList.add('dragging');
+        lastX = x; lastY = y;
+        var rect = card.getBoundingClientRect();
+        grabX = x - rect.left; grabY = y - rect.top;
+
+        // Drop a placeholder into the card's slot so the list keeps its shape.
+        placeholder = document.createElement('div');
+        placeholder.className = 'drag-placeholder';
+        placeholder.style.height = rect.height + 'px';
+        card.parentNode.insertBefore(placeholder, card);
+
+        // Lift the card out of the flow; it now floats and follows the pointer.
+        card.style.width = rect.width + 'px';
+        card.style.position = 'fixed';
+        card.style.margin = '0';
+        card.style.zIndex = '1000';
+        card.style.pointerEvents = 'none';
         card.style.touchAction = 'none';
+        card.classList.add('dragging');
+        positionCard();
+        try { card.setPointerCapture(pid); } catch (_) {}
+      }
+      // Slide the placeholder to whichever row the pointer is hovering.
+      function moveSlot() {
+        var tgt = cardAt(lastX, lastY);
+        if (!tgt || !placeholder || tgt.parentNode !== placeholder.parentNode) return;
+        var r = tgt.getBoundingClientRect();
+        var before = (lastY - r.top) < r.height / 2;
+        placeholder.parentNode.insertBefore(placeholder, before ? tgt : tgt.nextSibling);
       }
       function onMove(e) {
         if (!pending && !active) return;
         if (!active) {
           if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) < 6) return;
-          beginDrag();
+          beginDrag(e.clientX, e.clientY);
         }
         e.preventDefault();
         moved = true;
-        var tgt = cardAt(e.clientX, e.clientY);
-        clearDragMarks();
-        if (tgt && tgt !== card && tgt.parentNode === card.parentNode) {
-          var before = (e.clientY - tgt.getBoundingClientRect().top) < tgt.offsetHeight / 2;
-          tgt.classList.add(before ? 'drag-before' : 'drag-after');
-        }
+        lastX = e.clientX; lastY = e.clientY;
+        positionCard();
+        moveSlot();
         var vh = window.innerHeight;
         if (e.clientY < 72) window.scrollBy(0, -12);
         else if (e.clientY > vh - 72) window.scrollBy(0, 12);
@@ -1082,19 +1118,32 @@
         if (!active) return;
         active = false;
         try { card.releasePointerCapture(pid); } catch (_) {}
-        card.classList.remove('dragging');
-        card.style.touchAction = '';
-        if (moved) justDragged = true; // swallow the click that fires after a drag
-        var marked = content.querySelector('.drag-before, .drag-after');
-        if (moved && marked && marked !== card) {
-          var after = marked.classList.contains('drag-after');
-          var targetId = marked.getAttribute('data-id');
-          clearDragMarks();
-          if (targetId) reorderDashboard(t.id, targetId, after);
-        } else {
-          clearDragMarks();
+
+        // Translate the placeholder's final position into a reorder: drop the
+        // card before the next real row, or after the previous one.
+        var targetId = null, after = false;
+        if (placeholder) {
+          var sib = placeholder.nextElementSibling;
+          while (sib && (sib === card || !sib.classList.contains('task-card'))) sib = sib.nextElementSibling;
+          if (sib) { targetId = sib.getAttribute('data-id'); after = false; }
+          else {
+            sib = placeholder.previousElementSibling;
+            while (sib && (sib === card || !sib.classList.contains('task-card'))) sib = sib.previousElementSibling;
+            if (sib) { targetId = sib.getAttribute('data-id'); after = true; }
+          }
+          if (placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
+          placeholder = null;
         }
+
+        // Return the card to the flow (renderDashboard below rebuilds it anyway).
+        card.classList.remove('dragging');
+        card.style.position = ''; card.style.left = ''; card.style.top = '';
+        card.style.width = ''; card.style.margin = ''; card.style.zIndex = '';
+        card.style.pointerEvents = ''; card.style.touchAction = '';
+
+        if (moved) justDragged = true; // swallow the click that fires after a drag
         dragId = null;
+        if (moved && targetId && targetId !== t.id) reorderDashboard(t.id, targetId, after);
       }
       // Whole row is draggable with a mouse/pen; on touch only the grip drags
       // (so the list still scrolls and taps still open a task).
@@ -1108,7 +1157,7 @@
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
         window.addEventListener('pointercancel', onUp);
-        if (onGrip) { e.preventDefault(); beginDrag(); }
+        if (onGrip) { e.preventDefault(); beginDrag(e.clientX, e.clientY); }
       });
       grip.addEventListener('click', function (e) { e.stopPropagation(); });
     }
@@ -1122,10 +1171,11 @@
 
     // ---------- State ----------
     var tasks = [];          // full list (todo + done)
-    var currentView = 'all'; // 'all' | 'completed' | area name
+    var currentView = 'today'; // 'today' | 'all' | 'scheduled' | 'dashboard' | 'completed' | area name
     var editingId = null;    // task id when editing, else null
     var selectedPriority = 'medium';
     var showEmptyAreas = false;
+    var showHistorical = false; // Completed view: reveal tasks done > 7 days ago
     var searchQuery = '';
 
     // ---------- DOM refs ----------
@@ -1229,6 +1279,21 @@
     function todoTasks() { return tasks.filter(function (t) { return t.status !== 'done'; }); }
     function doneTasks() { return tasks.filter(function (t) { return t.status === 'done'; }); }
 
+    // A recurring task's next occurrence is created the moment you complete the
+    // current one. To preserve the sense of completion, keep that future
+    // occurrence out of the working lists (All Tasks, areas, Dashboard) until
+    // its due date actually arrives. It still lives in the data and shows up in
+    // the Scheduled view, so nothing is lost — it just reappears when due.
+    function isHiddenUntilDue(t) {
+      if (!t.recurrence || !t.due_date) return false;
+      var d = new Date(t.due_date + 'T00:00:00');
+      var today = new Date(); today.setHours(0, 0, 0, 0);
+      return d > today;
+    }
+    function activeTodos() {
+      return todoTasks().filter(function (t) { return !isHiddenUntilDue(t); });
+    }
+
     function matchesSearch(t) {
       if (!searchQuery) return true;
       var q = searchQuery.toLowerCase();
@@ -1288,6 +1353,36 @@
     function datedTodos() {
       return todoTasks().filter(function (t) { return t.due_date; });
     }
+    // Tasks that need attention today: anything overdue plus anything due today.
+    function todayList() {
+      return activeTodos().filter(function (t) {
+        var b = dueBucket(t);
+        return b === 'overdue' || b === 'today';
+      });
+    }
+    // Move every overdue task forward to today. Used by the roll-over button.
+    function rollOverdue() {
+      var today = toISODate(new Date());
+      var moved = 0;
+      todoTasks().forEach(function (t) {
+        if (t.due_date && t.due_date < today) {
+          t.due_date = today;
+          pushUpdate(t.id, { due_date: today });
+          moved++;
+        }
+      });
+      if (!moved) return;
+      saveCache();
+      render();
+      toast('Moved ' + moved + ' overdue task' + (moved === 1 ? '' : 's') + ' to today');
+    }
+    function rollButton() {
+      var b = document.createElement('button');
+      b.className = 'btn-ghost roll-btn';
+      b.textContent = 'Roll all → today';
+      b.addEventListener('click', function (e) { e.stopPropagation(); rollOverdue(); });
+      return b;
+    }
 
     function relTime(iso) {
       if (!iso) return '';
@@ -1309,11 +1404,12 @@
     // ---------- Rendering: sidebar ----------
     function renderNav() {
       var counts = areaCounts();
-      var totalTodo = todoTasks().length;
+      var totalTodo = activeTodos().length;
       var doneCount = doneTasks().length;
 
       var views = $('nav-views');
       views.innerHTML = '';
+      views.appendChild(navItem('today', '<span class="area-dot" style="background:#EF4444"></span>', 'Today', todayList().length));
       views.appendChild(navItem('all', '<span class="area-dot" style="background:#111827"></span>', 'All Tasks', totalTodo));
       views.appendChild(navItem('dashboard', '<span class="area-dot" style="background:#0A0A0A"></span>', 'Dashboard', totalTodo));
       views.appendChild(navItem('scheduled', '<span class="area-dot" style="background:#0EA5E9"></span>', 'Scheduled', datedTodos().length));
@@ -1350,6 +1446,7 @@
     function renderMobileNav(totalTodo, doneCount) {
       var nav = $('mobile-nav');
       var items = [
+        { view: 'today', label: 'Today', badge: todayList().length, icon: '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' },
         { view: 'all', label: 'All', badge: totalTodo, icon: '<path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>' },
         { view: 'dashboard', label: 'Priority', badge: 0, icon: '<path d="M4 6h16M4 12h11M4 18h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>' },
         { view: 'scheduled', label: 'Scheduled', badge: datedTodos().length, icon: '<rect x="3" y="4" width="18" height="17" rx="2" stroke="currentColor" stroke-width="2" fill="none"/><path d="M3 9h18M8 2v4M16 2v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>' },
@@ -1376,7 +1473,7 @@
       var counts = areaCounts();
       var nav = $('sheet-areas');
       nav.innerHTML = '';
-      nav.appendChild(sheetItem('all', '#111827', 'All Tasks', todoTasks().length));
+      nav.appendChild(sheetItem('all', '#111827', 'All Tasks', activeTodos().length));
       effectiveAreas().forEach(function (a) {
         nav.appendChild(sheetItem(a, areaColor(a).dot, a, counts[a] || 0));
       });
@@ -1403,6 +1500,7 @@
     function render() {
       renderNav();
       if (currentView === 'completed') return renderCompleted();
+      if (currentView === 'today') return renderToday();
       if (currentView === 'scheduled') return renderScheduled();
       if (currentView === 'dashboard') return renderDashboard();
       renderActive();
@@ -1412,7 +1510,7 @@
       var title = currentView === 'all' ? 'All Tasks' : currentView;
       $('view-title').textContent = title;
 
-      var list = todoTasks().filter(matchesSearch);
+      var list = activeTodos().filter(matchesSearch);
       var grouped;
       if (currentView === 'all') {
         grouped = effectiveAreas().map(function (a) {
@@ -1460,6 +1558,41 @@
       }
     }
 
+    function renderToday() {
+      $('view-title').textContent = 'Today';
+
+      var list = todayList().filter(matchesSearch);
+      var overdue = [], dueToday = [];
+      list.forEach(function (t) {
+        if (dueBucket(t) === 'overdue') overdue.push(t); else dueToday.push(t);
+      });
+      var byDuePriority = function (a, b) {
+        var da = a.due_date || '9999-99-99', db = b.due_date || '9999-99-99';
+        if (da !== db) return da < db ? -1 : 1;
+        var pa = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 1;
+        var pb = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 1;
+        return pa - pb;
+      };
+      overdue.sort(byDuePriority);
+      dueToday.sort(byDuePriority);
+
+      var total = overdue.length + dueToday.length;
+      $('view-sub').textContent = total === 0 ? '' : (total + (total === 1 ? ' task' : ' tasks'));
+      content.innerHTML = '';
+
+      if (total === 0) {
+        if (searchQuery) {
+          content.appendChild(emptyState('∅', 'No matches.', 'Nothing due today matches “' + searchQuery + '”.'));
+        } else {
+          content.appendChild(emptyState('✓', 'You’re clear for today.', 'Nothing overdue or due today — nice.'));
+        }
+        return;
+      }
+
+      if (overdue.length) content.appendChild(timeGroup('Overdue', true, overdue, rollButton()));
+      if (dueToday.length) content.appendChild(timeGroup('Today', false, dueToday));
+    }
+
     function renderScheduled() {
       $('view-title').textContent = 'Scheduled';
 
@@ -1498,17 +1631,18 @@
 
       order.forEach(function (k) {
         if (buckets[k].length === 0) return;
-        content.appendChild(timeGroup(labels[k], k === 'overdue', buckets[k]));
+        content.appendChild(timeGroup(labels[k], k === 'overdue', buckets[k], k === 'overdue' ? rollButton() : null));
       });
     }
 
-    function timeGroup(label, danger, items) {
+    function timeGroup(label, danger, items, action) {
       var wrap = document.createElement('div');
       wrap.className = 'area-group';
       var header = document.createElement('div');
       header.className = 'area-group-header';
       header.innerHTML = '<span class="time-badge' + (danger ? ' danger' : '') + '">' + esc(label) + '</span>' +
         '<span class="area-group-count">' + items.length + '</span>';
+      if (action) { action.style.marginLeft = 'auto'; header.appendChild(action); }
       wrap.appendChild(header);
 
       var listEl = document.createElement('div');
@@ -1653,10 +1787,52 @@
       bar.appendChild(clearBtn);
       content.appendChild(bar);
 
-      var listEl = document.createElement('div');
-      listEl.className = 'task-list';
-      done.forEach(function (t) { listEl.appendChild(completedCard(t)); });
-      content.appendChild(listEl);
+      var cardsInto = function (items) {
+        var listEl = document.createElement('div');
+        listEl.className = 'task-list';
+        items.forEach(function (t) { listEl.appendChild(completedCard(t)); });
+        content.appendChild(listEl);
+      };
+
+      // While searching, show every match in one list so old tasks are findable.
+      if (searchQuery) { cardsInto(done); return; }
+
+      // Otherwise keep the view tidy: recent (last 7 days) up front, older
+      // tasks tucked behind a "Show historical" toggle. Nothing is deleted.
+      var cutoff = Date.now() - 7 * 86400000;
+      var recent = [], historical = [];
+      done.forEach(function (t) {
+        var ts = t.completed_at ? new Date(t.completed_at).getTime() : 0;
+        if (ts >= cutoff) recent.push(t); else historical.push(t);
+      });
+
+      if (recent.length) cardsInto(recent);
+      else {
+        var none = document.createElement('div');
+        none.className = 'task-notes';
+        none.style.padding = '4px 2px';
+        none.textContent = 'Nothing completed in the last 7 days.';
+        content.appendChild(none);
+      }
+
+      if (historical.length) {
+        var toggle = document.createElement('button');
+        toggle.className = 'btn-ghost';
+        toggle.style.marginTop = '8px';
+        toggle.textContent = (showHistorical ? 'Hide' : 'Show') + ' historical (' + historical.length + ')';
+        toggle.addEventListener('click', function () { showHistorical = !showHistorical; render(); });
+        content.appendChild(toggle);
+
+        if (showHistorical) {
+          var head = document.createElement('div');
+          head.className = 'area-group-header';
+          head.style.marginTop = '20px';
+          head.innerHTML = '<span class="time-badge">Older than 7 days</span>' +
+            '<span class="area-group-count">' + historical.length + '</span>';
+          content.appendChild(head);
+          cardsInto(historical);
+        }
+      }
     }
 
     function completedCard(t) {
