@@ -733,9 +733,20 @@
     .drag-grip { display: flex; align-items: center; color: var(--text-secondary); padding: 4px 4px 4px 8px; cursor: grab; touch-action: none; }
     .drag-grip:active { cursor: grabbing; }
     .drag-grip svg { width: 15px; height: 15px; fill: currentColor; }
-    .task-card.dragging { opacity: 0.4; cursor: grabbing; }
-    .task-card.drag-before { box-shadow: inset 0 4px 0 0 var(--accent); }
-    .task-card.drag-after { box-shadow: inset 0 -4px 0 0 var(--accent); }
+    /* While dragging, the card is lifted out of the list and follows the
+       pointer; a dashed slot (the placeholder) shows where it will drop. */
+    .task-card.dragging {
+      cursor: grabbing;
+      opacity: 0.97;
+      box-shadow: 5px 9px 0 0 rgba(10,10,10,0.16), 0 16px 32px rgba(10,10,10,0.22);
+      transform: rotate(-1.2deg) scale(1.02);
+    }
+    .drag-placeholder {
+      border: 2px dashed var(--accent);
+      background: rgba(255,180,0,0.12);
+      border-radius: var(--radius-card);
+      box-sizing: border-box;
+    }
     .stats-link { text-decoration: none; }
   </style>
 </head>
@@ -1027,11 +1038,6 @@
       if (sortSupported) pushUpdate(t.id, { sort_order: val });
       renderDashboard();
     }
-    function clearDragMarks() {
-      content.querySelectorAll('.drag-before, .drag-after').forEach(function (el) {
-        el.classList.remove('drag-before', 'drag-after');
-      });
-    }
     // Pointer-based drag so it works with mouse, touch and pen alike.
     function setupDrag(card, t) {
       var grip = document.createElement('span');
@@ -1042,34 +1048,63 @@
       card.style.cursor = 'grab';
 
       var pending = false, active = false, moved = false, startX = 0, startY = 0, pid = null;
+      var placeholder = null, grabX = 0, grabY = 0, lastX = 0, lastY = 0;
 
-      // Task card under a screen point, ignoring the one being dragged.
+      // Real, in-flow task card under a screen point (the lifted card has
+      // pointer-events disabled, and the placeholder isn't a .task-card, so
+      // neither is ever returned here).
       function cardAt(x, y) {
-        card.style.pointerEvents = 'none';
         var el = document.elementFromPoint(x, y);
-        card.style.pointerEvents = '';
-        return el && el.closest ? el.closest('.task-card') : null;
+        var c = el && el.closest ? el.closest('.task-card') : null;
+        return c === card ? null : c;
       }
-      function beginDrag() {
+      // Keep the lifted card pinned under the pointer.
+      function positionCard() {
+        card.style.left = (lastX - grabX) + 'px';
+        card.style.top = (lastY - grabY) + 'px';
+      }
+      function beginDrag(x, y) {
         active = true; pending = false; dragId = t.id;
-        try { card.setPointerCapture(pid); } catch (_) {}
-        card.classList.add('dragging');
+        lastX = x; lastY = y;
+        var rect = card.getBoundingClientRect();
+        grabX = x - rect.left; grabY = y - rect.top;
+
+        // Drop a placeholder into the card's slot so the list keeps its shape.
+        placeholder = document.createElement('div');
+        placeholder.className = 'drag-placeholder';
+        placeholder.style.height = rect.height + 'px';
+        card.parentNode.insertBefore(placeholder, card);
+
+        // Lift the card out of the flow; it now floats and follows the pointer.
+        card.style.width = rect.width + 'px';
+        card.style.position = 'fixed';
+        card.style.margin = '0';
+        card.style.zIndex = '1000';
+        card.style.pointerEvents = 'none';
         card.style.touchAction = 'none';
+        card.classList.add('dragging');
+        positionCard();
+        try { card.setPointerCapture(pid); } catch (_) {}
+      }
+      // Slide the placeholder to whichever row the pointer is hovering.
+      function moveSlot() {
+        var tgt = cardAt(lastX, lastY);
+        if (!tgt || !placeholder || tgt.parentNode !== placeholder.parentNode) return;
+        var r = tgt.getBoundingClientRect();
+        var before = (lastY - r.top) < r.height / 2;
+        placeholder.parentNode.insertBefore(placeholder, before ? tgt : tgt.nextSibling);
       }
       function onMove(e) {
         if (!pending && !active) return;
         if (!active) {
           if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) < 6) return;
-          beginDrag();
+          beginDrag(e.clientX, e.clientY);
         }
         e.preventDefault();
         moved = true;
-        var tgt = cardAt(e.clientX, e.clientY);
-        clearDragMarks();
-        if (tgt && tgt !== card && tgt.parentNode === card.parentNode) {
-          var before = (e.clientY - tgt.getBoundingClientRect().top) < tgt.offsetHeight / 2;
-          tgt.classList.add(before ? 'drag-before' : 'drag-after');
-        }
+        lastX = e.clientX; lastY = e.clientY;
+        positionCard();
+        moveSlot();
         var vh = window.innerHeight;
         if (e.clientY < 72) window.scrollBy(0, -12);
         else if (e.clientY > vh - 72) window.scrollBy(0, 12);
@@ -1082,19 +1117,32 @@
         if (!active) return;
         active = false;
         try { card.releasePointerCapture(pid); } catch (_) {}
-        card.classList.remove('dragging');
-        card.style.touchAction = '';
-        if (moved) justDragged = true; // swallow the click that fires after a drag
-        var marked = content.querySelector('.drag-before, .drag-after');
-        if (moved && marked && marked !== card) {
-          var after = marked.classList.contains('drag-after');
-          var targetId = marked.getAttribute('data-id');
-          clearDragMarks();
-          if (targetId) reorderDashboard(t.id, targetId, after);
-        } else {
-          clearDragMarks();
+
+        // Translate the placeholder's final position into a reorder: drop the
+        // card before the next real row, or after the previous one.
+        var targetId = null, after = false;
+        if (placeholder) {
+          var sib = placeholder.nextElementSibling;
+          while (sib && (sib === card || !sib.classList.contains('task-card'))) sib = sib.nextElementSibling;
+          if (sib) { targetId = sib.getAttribute('data-id'); after = false; }
+          else {
+            sib = placeholder.previousElementSibling;
+            while (sib && (sib === card || !sib.classList.contains('task-card'))) sib = sib.previousElementSibling;
+            if (sib) { targetId = sib.getAttribute('data-id'); after = true; }
+          }
+          if (placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
+          placeholder = null;
         }
+
+        // Return the card to the flow (renderDashboard below rebuilds it anyway).
+        card.classList.remove('dragging');
+        card.style.position = ''; card.style.left = ''; card.style.top = '';
+        card.style.width = ''; card.style.margin = ''; card.style.zIndex = '';
+        card.style.pointerEvents = ''; card.style.touchAction = '';
+
+        if (moved) justDragged = true; // swallow the click that fires after a drag
         dragId = null;
+        if (moved && targetId && targetId !== t.id) reorderDashboard(t.id, targetId, after);
       }
       // Whole row is draggable with a mouse/pen; on touch only the grip drags
       // (so the list still scrolls and taps still open a task).
@@ -1108,7 +1156,7 @@
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
         window.addEventListener('pointercancel', onUp);
-        if (onGrip) { e.preventDefault(); beginDrag(); }
+        if (onGrip) { e.preventDefault(); beginDrag(e.clientX, e.clientY); }
       });
       grip.addEventListener('click', function (e) { e.stopPropagation(); });
     }
