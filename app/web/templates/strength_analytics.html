@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}ORION — Strength Analytics{% endblock %}
+{% block heading %}Analytics{% endblock %}
+{% block content %}
+<section class="panel hero">
+  <h2>Strength intelligence</h2>
+  <div class="directive-primary"><span class="tag">Balance</span>{{ snap.balance_note }}</div>
+</section>
+
+<section class="panel">
+  <h2>Workout frequency</h2>
+  <div class="muscle-grid">
+    {% for row in snap.muscle_frequency %}
+    <div class="muscle-row"><span>{{ row.muscle }}</span><i style="--v: {{ row.count }}"></i><b>{{ row.count }}</b></div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Training balance</h2>
+  <div class="days-grid">
+    {% for row in snap.days_since %}
+    <div class="day-chip {{ 'stale' if row.days >= 7 }}"><b>{{ row.muscle }}</b><span>{{ row.days }}d</span></div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Volume by muscle</h2>
+  <div class="muscle-grid">
+    {% for row in snap.volume_by_muscle %}
+    <div class="muscle-row"><span>{{ row.muscle }}</span><i style="--v: {{ (row.volume / 1000) | round(0, 'ceil') }}"></i><b>{{ '%.0f' % row.volume }}</b></div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Key lift progression</h2>
+  {% if snap.progressions %}
+  <div class="queue">
+    {% for row in snap.progressions %}
+    <div class="finding">
+      <div class="head"><b>{{ row.exercise }}</b><span class="pill {{ 'positive' if row.delta >= 0 else 'warning' }}">{{ '%+.1f' % row.delta }}</span></div>
+      <svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline points="{{ spark(row.points) }}"></polyline></svg>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="hint">Complete 3 sessions to unlock strength trends.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Most trained</h2>
+  {% if snap.most_trained %}
+  <div class="rows">
+    {% for name, count in snap.most_trained %}
+    <div class="tx"><span class="who">{{ name }}</span><span class="amt">{{ count }} sets</span></div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="hint">No analytics yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

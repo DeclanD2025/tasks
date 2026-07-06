@@ -8,6 +8,11 @@ zero-config migration mechanism. On launch the app calls
 `JSON`/`extra` escape-hatch columns on most tables mean additive changes rarely
 require a schema change at all.
 
+The CloudKit sync foundation now adds a small versioned SQLite migration layer
+on top of this. `app.sync.ensure_sync_foundation()` creates sync devices,
+record-name mappings, checkpoints, tombstones, and the pending outbox, then sets
+SQLite `PRAGMA user_version` to at least `1`. It is safe to run repeatedly.
+
 To wipe and rebuild the local SQLite DB during development:
 
 ```bash

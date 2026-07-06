@@ -18,6 +18,14 @@ uv run pyinstaller packaging/orion.spec --noconfirm \
 
 echo "==> Built: $(pwd)/dist/ORION.app"
 
+if [[ -n "${ORION_CODESIGN_IDENTITY:-}" ]]; then
+  echo "==> Signing dist/ORION.app with CloudKit entitlements"
+  codesign --force --deep --options runtime \
+    --entitlements packaging/orion.mac.entitlements \
+    --sign "$ORION_CODESIGN_IDENTITY" \
+    dist/ORION.app
+fi
+
 if [[ "${1:-}" == "--install" ]]; then
   rm -rf /Applications/ORION.app
   cp -R dist/ORION.app /Applications/ORION.app

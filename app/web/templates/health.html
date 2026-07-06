@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}ORION — Health{% endblock %}
+{% block heading %}Body Telemetry{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  <span>{{ snap.label }}</span>
+  {% if snap.score is not none %}<span>{{ '%.0f' % snap.score }}/100</span>{% endif %}
+  <span>data {{ snap.data_quality }}</span>
+  {% if snap.estimated %}<span>EST</span>{% endif %}
+  <span>debt {{ sleep_debt.label }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="cols">
+<div class="col">
+<section class="panel hero">
+  <div class="hero-top">
+    {{ ui.score_ring(snap.score, snap.label, detail='readiness') }}
+    <div class="hero-status">
+      <h1>{{ snap.label }}</h1>
+      <div class="estimate">
+        {% if snap.score is not none %}{{ '%.0f' % snap.score }}/100 ·{% endif %}
+        data {{ snap.data_quality }}{% if snap.estimated %} · estimated{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="directive-primary"><span class="tag">Hold</span><span>{{ snap.recommendation }}</span></div>
+  <p class="note">A transparent estimate from your own baselines — not a clinical measure.
+  Tap the ring for the formula; every factor and its exact input is listed below.</p>
+</section>
+
+<section class="panel">
+  <h2>Readiness inputs</h2>
+  <div class="factors">
+    {% for f in snap.factors %}
+    <div class="factor {{ 'absent' if not f.present else '' }}">
+      <span class="k">{{ f.label }}</span>
+      <span class="v">{{ f.value }}</span>
+      <span class="impact">{{ f.impact }}</span>
+      <span class="track" aria-hidden="true"><i style="width: {{ '%.0f' % f.contribution }}%"></i></span>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="note" style="margin-top:10px">Bars show each factor's 0–100 contribution to the composite.
+  Missing factors are shown, not silently skipped.</p>
+</section>
+
+<section class="panel">
+  <h2>Sleep debt</h2>
+  {% if sleep_debt.calibrating %}
+  {{ ui.empty_state(
+      'Calibrating: ' ~ sleep_debt.nights_recorded ~ ' of 14 nights.',
+      'ORION learns your personal sleep need from your own nights before it claims a debt — no generic 8-hour rule. Keep sleep flowing in via HAE.',
+      '/data', 'Check imports') }}
+  {% else %}
+  <div class="stat-band">
+    <div class="stat"><div class="n">{{ sleep_debt.label }}</div><div class="l">Debt · 14 nights</div></div>
+    <div class="stat"><div class="n">{{ '%.1f' % (sleep_debt.need_minutes / 60) }}<small> h</small></div><div class="l">Your need</div></div>
+    <div class="stat">
+      {% if sleep_debt.trend_minutes is not none %}
+      <div class="n">{{ '%.1f' % (sleep_debt.trend_minutes | abs / 60) }}<small> h {{ 'up' if sleep_debt.trend_minutes > 0 else 'down' }}</small></div>
+      {% else %}<div class="n">—</div>{% endif %}
+      <div class="l">Week trend</div>
+    </div>
+  </div>
+  <p class="hint">Need is the trimmed mean of your own recent nights; debt is the net
+  shortfall against it. Under 15 minutes reads as clear. Tap for the nightly series.</p>
+  <div class="btnrow compact" style="margin-top:10px">
+    <button type="button" class="btn ghost" data-detail="sleep_debt">Inspect calculation</button>
+    <button type="button" class="btn ghost" data-detail="sleep">Sleep trend</button>
+  </div>
+  {% endif %}
+</section>
+</div>
+
+<div class="col">
+{{ ui.signal_board(signals, detail_key=detail_key, title='Signals — tap any card') }}
+
+<section class="panel">
+  <h2>What changed</h2>
+  <ul class="clean">
+    {% for change in snap.changes %}<li>{{ change }}</li>{% endfor %}
+  </ul>
+</section>
+
+<section class="panel">
+  <h2>Deep dives</h2>
+  <div class="d-related" style="margin-top:2px">
+    <button type="button" data-detail="hrv">HRV</button>
+    <button type="button" data-detail="resting_hr">Resting HR</button>
+    <button type="button" data-detail="weight">Weight</button>
+    <button type="button" data-detail="vo2max">VO₂ max</button>
+    <button type="button" data-detail="training_load">Strain</button>
+    <button type="button" data-detail="mood">Mood</button>
+    <button type="button" data-detail="mindfulness">Mindfulness</button>
+    <button type="button" data-detail="steps">Steps</button>
+  </div>
+  <p class="hint">Every drilldown shows its source, freshness, 7/30/90-day trend,
+  what it means, and how it's calculated.</p>
+</section>
+</div>
+</div>
+{% endblock %}

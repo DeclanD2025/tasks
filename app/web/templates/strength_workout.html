@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}ORION — {{ workout.name }}{% endblock %}
+{% block heading %}Workout{% endblock %}
+
+{% block statusline %}
+<div class="statusline">
+  <span>{{ workout.status }}</span>
+  <span>{{ workout.exercise_count }} exercises</span>
+  <span>{{ workout.completed_sets }}/{{ workout.total_sets }} sets</span>
+  <span>{{ '%.0f' % workout.total_volume }}kg</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="panel hero active-workout" data-started-at="{{ workout.started_at.isoformat() }}">
+  <div class="strength-command">
+    <div>
+      <span class="k">Active cockpit</span>
+      <h1>{{ workout.name }}</h1>
+      <p>Started {{ workout.started_at.strftime('%H:%M') }} · <span data-workout-timer>{{ workout.duration_minutes }}m</span></p>
+    </div>
+    {% if workout.status == 'active' %}
+    <form method="post" action="/strength/workout/{{ workout.id }}/finish">
+      <input type="hidden" name="notes" value="">
+      <button class="primary finish-btn" type="submit">Finish</button>
+    </form>
+    {% else %}
+    <a class="btn ghost" href="/strength/history">History</a>
+    {% endif %}
+  </div>
+  <div class="workout-stats">
+    <div><b>{{ workout.completed_sets }}</b><span>done</span></div>
+    <div><b>{{ workout.total_sets }}</b><span>sets</span></div>
+    <div><b>{{ '%.0f' % workout.total_volume }}</b><span>kg</span></div>
+  </div>
+  {% if workout.status == 'active' %}
+  <div class="btnrow" style="margin-top:12px">
+    <a class="btn ghost" href="/strength/workout/{{ workout.id }}/exercises">Add exercise</a>
+    <form method="post" action="/strength/workout/{{ workout.id }}/discard">
+      <button class="ghost" type="submit">Discard</button>
+    </form>
+  </div>
+  {% endif %}
+</section>
+
+{% if not workout.exercises %}
+<section class="panel">
+  <h2>No exercises yet</h2>
+  <p class="hint">Add exercises quickly, then ORION will autosave each set as you log it.</p>
+  <div class="btnrow" style="margin-top:12px"><a class="btn primary" href="/strength/workout/{{ workout.id }}/exercises">Add exercises</a></div>
+</section>
+{% endif %}
+
+{% for block in workout.exercises %}
+<section class="panel exercise-card" id="exercise-{{ block.id }}">
+  <div class="exercise-head">
+    <span class="glyph">{{ block.exercise.glyph }}</span>
+    <div>
+      <h2>{{ block.exercise.name }}</h2>
+      <p>{{ block.exercise.equipment }} · {{ block.exercise.primary }} · {{ block.completed_sets }}/{{ block.sets | length }} complete</p>
+    </div>
+    <button class="timer-btn" type="button" data-rest-seconds="{{ workout.default_rest_seconds }}">Rest</button>
+  </div>
+
+  <div class="set-stack">
+    {% for set in block.sets %}
+    <form method="post" action="/strength/sets/{{ set.id }}" class="set-row {{ 'done' if set.completed }}" data-offline-queue data-keep-values data-offline-label="strength set">
+      <input type="hidden" name="workout_id" value="{{ workout.id }}">
+      <span class="set-num">{{ set.set_number }}</span>
+      <label>kg<input type="number" name="weight" value="{{ '%g' % set.weight if set.weight is not none else '' }}" inputmode="decimal" step="0.5" min="0"></label>
+      <label>reps<input type="number" name="reps" value="{{ set.reps if set.reps is not none else '' }}" inputmode="numeric" min="0"></label>
+      <label>RPE<input type="number" name="rpe" value="{{ '%g' % set.rpe if set.rpe is not none else '' }}" inputmode="decimal" min="1" max="10" step="0.5"></label>
+      <select name="set_type" aria-label="Set type">
+        {% for st in set_types %}
+        <option value="{{ st }}" {{ 'selected' if set.set_type == st }}>{{ st }}</option>
+        {% endfor %}
+      </select>
+      <button class="set-complete" name="completed" value="1" type="submit">{{ '✓' if set.completed else '▶' }}</button>
+    </form>
+    {% endfor %}
+  </div>
+
+  {% if workout.status == 'active' %}
+  <div class="exercise-actions">
+    <form method="post" action="/strength/exercise-blocks/{{ block.id }}/sets">
+      <input type="hidden" name="workout_id" value="{{ workout.id }}">
+      <button class="ghost" type="submit">Add set</button>
+    </form>
+    <form method="post" action="/strength/exercise-blocks/{{ block.id }}/apply-last">
+      <input type="hidden" name="workout_id" value="{{ workout.id }}">
+      <button class="ghost" type="submit">Apply last workout</button>
+    </form>
+    <a class="btn ghost" href="/strength/exercises/{{ block.exercise.id }}">Progression</a>
+  </div>
+  {% endif %}
+
+  <details class="last-time">
+    <summary>Last time you did this</summary>
+    {% if block.last %}
+    <div class="last-panel">
+      <div class="last-title">Last workout on {{ block.last.date_label }}</div>
+      {% for row in block.last.sets %}
+      <div class="last-row"><span>{{ row.set_type | title }} · set {{ row.set_number }}</span><b>{{ '%g' % row.weight if row.weight else 0 }}kg × {{ row.reps or 0 }}</b></div>
+      {% endfor %}
+      <div class="last-metrics">
+        <span>Top {{ '%.1f' % block.last.top_set }}kg</span>
+        <span>{{ '%.0f' % block.last.volume }}kg volume</span>
+        <span>{{ '%.1f' % block.last.e1rm }}kg e1RM</span>
+      </div>
+      {% if block.last.notes %}<p class="hint">{{ block.last.notes }}</p>{% endif %}
+    </div>
+    {% else %}
+    <p class="hint">No previous data yet. Set your baseline today.</p>
+    {% endif %}
+  </details>
+</section>
+{% endfor %}
+
+<div class="rest-pill" data-rest-pill hidden>
+  <span>Rest</span><b data-rest-remaining>00:00</b><button type="button" data-rest-stop>Stop</button>
+</div>
+{% endblock %}

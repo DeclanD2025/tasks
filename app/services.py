@@ -21,12 +21,16 @@ from app.db.models import (
     Account,
     ActivityMetricDaily,
     BalanceSnapshot,
+    CalendarEvent,
+    CaptureInboxItem,
     HealthMetricDaily,
     Insight,
     Project,
     ProjectMetricDaily,
+    Task,
     Transaction,
     User,
+    utcnow,
 )
 
 
@@ -37,8 +41,12 @@ class Metric:
     label: str
     value: str
     delta: str = ""  # e.g. "+4.2%"
-    trend: str = "flat"  # up | down | flat
+    trend: str = "flat"  # up | down | flat  (drives the arrow glyph)
     series: list[float] | None = None  # optional sparkline data
+    # Optional semantic colour override. When set, the delta/sparkline colour
+    # follows the tone (good/bad/neutral) instead of the arrow direction — so a
+    # metric where "up is bad" (e.g. job jeopardy) can show a red rising arrow.
+    tone: str | None = None  # good | bad | neutral | None
 
 
 def get_default_user_id() -> int | None:
@@ -262,6 +270,297 @@ def project_momentum(user_id: int) -> pd.DataFrame:
             .where(Project.user_id == user_id)
         ).all()
     return pd.DataFrame(rows, columns=["project", "day", "momentum"])
+
+
+def project_portfolio(user_id: int, days: int = 30) -> list[dict]:
+    """Per-project operating readout for the Projects page."""
+    since = date.today() - timedelta(days=days)
+    with session_scope() as s:
+        projects = s.scalars(
+            select(Project).where(Project.user_id == user_id).order_by(Project.status, Project.name)
+        ).all()
+        project_ids = [p.id for p in projects]
+        rows = []
+        if project_ids:
+            rows = s.execute(
+                select(
+                    ProjectMetricDaily.project_id,
+                    ProjectMetricDaily.day,
+                    ProjectMetricDaily.commits,
+                    ProjectMetricDaily.words_written,
+                    ProjectMetricDaily.tasks_done,
+                    ProjectMetricDaily.momentum,
+                )
+                .where(ProjectMetricDaily.project_id.in_(project_ids))
+                .where(ProjectMetricDaily.day >= since)
+            ).all()
+    if not projects:
+        return []
+    if rows:
+        df = pd.DataFrame(
+            rows,
+            columns=["project_id", "day", "commits", "words", "tasks", "momentum"],
+        )
+    else:
+        df = pd.DataFrame(columns=["project_id", "day", "commits", "words", "tasks", "momentum"])
+
+    out: list[dict] = []
+    today = date.today()
+    for project in projects:
+        pdf = df[df["project_id"] == project.id].sort_values("day")
+        last = pdf.tail(1)
+        prev = pdf.iloc[-8:-1] if len(pdf) > 1 else pdf.iloc[0:0]
+        last_day = last["day"].iloc[0] if not last.empty else None
+        latest_momentum = float(last["momentum"].iloc[0]) if not last.empty else 0.0
+        prev_momentum = float(prev["momentum"].mean()) if not prev.empty else latest_momentum
+        delta = latest_momentum - prev_momentum
+        stale_days = (today - last_day).days if last_day else None
+        out.append({
+            "id": project.id,
+            "name": project.name,
+            "status": project.status,
+            "momentum": latest_momentum,
+            "delta": delta,
+            "trend": _trend(delta),
+            "series": pdf["momentum"].fillna(0).tolist(),
+            "commits": int(pdf["commits"].fillna(0).sum()) if not pdf.empty else 0,
+            "words": int(pdf["words"].fillna(0).sum()) if not pdf.empty else 0,
+            "tasks": int(pdf["tasks"].fillna(0).sum()) if not pdf.empty else 0,
+            "stale_days": stale_days,
+            "last_day": last_day,
+        })
+    return out
+
+
+def add_project(user_id: int, name: str) -> int:
+    with session_scope() as s:
+        row = Project(user_id=user_id, name=name.strip() or "New project", status="active")
+        s.add(row)
+        s.flush()
+        return row.id
+
+
+def update_project(project_id: int, *, name: str | None = None, status: str | None = None) -> None:
+    with session_scope() as s:
+        row = s.get(Project, project_id)
+        if row is None:
+            return
+        if name is not None and name.strip():
+            row.name = name.strip()
+        if status is not None:
+            row.status = status.strip() or row.status
+
+
+# --------------------------------------------------------------------------- #
+# Calendar (iOS / iCloud mirror via EventKit)
+# --------------------------------------------------------------------------- #
+def calendar_events(
+    user_id: int, *, days_back: int = 1, days_forward: int = 30
+) -> list[dict]:
+    """Upcoming (and lightly back-dated) calendar events for the Calendar page."""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    lo = now - timedelta(days=days_back)
+    hi = now + timedelta(days=days_forward)
+    with session_scope() as s:
+        rows = s.scalars(
+            select(CalendarEvent)
+            .where(CalendarEvent.user_id == user_id)
+            .where(CalendarEvent.starts_at >= lo)
+            .where(CalendarEvent.starts_at <= hi)
+            .order_by(CalendarEvent.starts_at.asc())
+        ).all()
+        return [
+            {
+                "id": r.id,
+                "title": r.title,
+                "location": r.location,
+                "calendar_name": r.calendar_name,
+                "starts_at": r.starts_at,
+                "ends_at": r.ends_at,
+                "all_day": bool(r.all_day),
+            }
+            for r in rows
+        ]
+
+
+def calendar_event_count(user_id: int) -> int:
+    with session_scope() as s:
+        return s.query(CalendarEvent).filter_by(user_id=user_id).count()
+
+
+# --------------------------------------------------------------------------- #
+# Tasks (two-way sync with the companion tasks app)
+# --------------------------------------------------------------------------- #
+def get_tasks(user_id: int, *, include_done: bool = True) -> list[dict]:
+    """All locally-mirrored tasks, grouped-friendly order (area, sort, due)."""
+    with session_scope() as s:
+        q = (
+            select(Task)
+            .where(Task.user_id == user_id)
+            .where(Task.pending_delete == 0)
+            .order_by(Task.area.asc(), Task.sort_order.asc(), Task.due_date.asc())
+        )
+        if not include_done:
+            q = q.where(Task.status != "done")
+        rows = s.scalars(q).all()
+        return [
+            {
+                "id": r.id,
+                "ext_id": r.ext_id,
+                "title": r.title,
+                "area": r.area or "Unsorted",
+                "category": r.category,
+                "priority": r.priority,
+                "status": r.status,
+                "notes": r.notes,
+                "due_date": r.due_date,
+                "completed_at": r.completed_at,
+                "dirty": bool(r.dirty),
+            }
+            for r in rows
+        ]
+
+
+def task_counts(user_id: int) -> dict:
+    with session_scope() as s:
+        rows = s.scalars(
+            select(Task).where(
+                Task.user_id == user_id, Task.pending_delete == 0
+            )
+        ).all()
+        open_n = sum(1 for r in rows if r.status != "done")
+        done_n = sum(1 for r in rows if r.status == "done")
+        return {"open": open_n, "done": done_n, "total": len(rows)}
+
+
+def set_task_done(task_id: int, done: bool = True) -> None:
+    """Mark a task done/open locally and queue it for push to Supabase."""
+    with session_scope() as s:
+        row = s.get(Task, task_id)
+        if row is None:
+            return
+        row.status = "done" if done else "open"
+        row.completed_at = utcnow() if done else None
+        row.dirty = 1
+
+
+def update_task(
+    task_id: int,
+    *,
+    title: str | None = None,
+    area: str | None = None,
+    category: str | None = None,
+    priority: str | None = None,
+    notes: str | None = None,
+) -> None:
+    """Edit a task locally and queue it for push to Supabase."""
+    with session_scope() as s:
+        row = s.get(Task, task_id)
+        if row is None:
+            return
+        if title is not None and title.strip():
+            row.title = title.strip()
+        if area is not None:
+            row.area = area.strip() or None
+        if category is not None:
+            row.category = category.strip() or None
+        if priority is not None:
+            row.priority = priority
+        if notes is not None:
+            row.notes = notes
+        row.dirty = 1
+
+
+def add_task(
+    user_id: int,
+    title: str,
+    *,
+    area: str | None = None,
+    category: str | None = None,
+    priority: str = "medium",
+    notes: str | None = None,
+    due_date: date | None = None,
+) -> int:
+    """Create a task locally; first sync pushes it to Supabase (assigns ext_id)."""
+    with session_scope() as s:
+        row = Task(
+            user_id=user_id,
+            title=title.strip() or "New task",
+            area=area,
+            category=category,
+            priority=priority,
+            notes=notes,
+            due_date=due_date,
+            status="open",
+            dirty=1,
+        )
+        s.add(row)
+        s.flush()
+        return row.id
+
+
+def delete_task(task_id: int) -> None:
+    """Queue a task for deletion (removed remotely + locally on next sync)."""
+    with session_scope() as s:
+        row = s.get(Task, task_id)
+        if row is None:
+            return
+        if row.ext_id:
+            row.pending_delete = 1
+            row.dirty = 1
+        else:
+            # Never pushed — safe to drop immediately.
+            s.delete(row)
+
+
+# --------------------------------------------------------------------------- #
+# Capture inbox
+# --------------------------------------------------------------------------- #
+def add_capture_inbox_item(
+    user_id: int,
+    text: str,
+    *,
+    source: str = "desktop",
+    extra: dict | None = None,
+) -> int:
+    """Create a quick-capture item for later triage and CloudKit sync."""
+    with session_scope() as s:
+        row = CaptureInboxItem(
+            user_id=user_id,
+            text=text.strip(),
+            source=source,
+            status="new",
+            extra=extra or {},
+            dirty=1,
+        )
+        s.add(row)
+        s.flush()
+        return row.id
+
+
+def capture_inbox_items(user_id: int, *, limit: int = 50) -> list[dict]:
+    """Recent untriaged quick-capture items."""
+    with session_scope() as s:
+        rows = s.scalars(
+            select(CaptureInboxItem)
+            .where(CaptureInboxItem.user_id == user_id)
+            .where(CaptureInboxItem.pending_delete == 0)
+            .order_by(CaptureInboxItem.created_at.desc())
+            .limit(limit)
+        ).all()
+        return [
+            {
+                "id": row.id,
+                "text": row.text,
+                "source": row.source,
+                "status": row.status,
+                "created_at": row.created_at,
+                "updated_at": row.updated_at,
+            }
+            for row in rows
+        ]
 
 
 # --------------------------------------------------------------------------- #

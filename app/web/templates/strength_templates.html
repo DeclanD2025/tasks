@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}ORION — Strength Templates{% endblock %}
+{% block heading %}Templates{% endblock %}
+{% block content %}
+<section class="panel hero">
+  <h2>Template library</h2>
+  <div class="directive-primary"><span class="tag">Fast start</span>Choose a session shell, preview the exercises, then start with one tap.</div>
+</section>
+<section class="panel">
+  <h2>Saved templates</h2>
+  <div class="template-grid">
+    {% for t in templates %}
+    <a class="template-card" href="/strength/templates/{{ t.id }}">
+      <span class="k">{{ t.exercise_count }} exercises · {{ t.set_count }} sets</span>
+      <b>{{ t.name }}</b>
+      <span>{{ t.description }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

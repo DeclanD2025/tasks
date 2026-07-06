@@ -56,7 +56,7 @@ class HudBackground(QWidget):
         self._t = 0.0
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        self._timer.start(50)
+        self._timer.start(125)
 
     def _tick(self):
         self._t += 0.05

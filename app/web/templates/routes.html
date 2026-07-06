@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}ORION — Route Atlas{% endblock %}
+{% block heading %}Route Atlas{% endblock %}
+{% block head %}<script src="/static/orion-map.js" defer></script>{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  <span>{{ routes | length }} route{{ 's' if routes | length != 1 }}</span>
+  <span>{{ workouts | length }} GPS workouts</span>
+  <span>OpenStreetMap · free tiles</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="cols">
+<div class="col">
+<section class="panel">
+  <h2>Saved routes</h2>
+  {% if routes %}
+  <div class="rows">
+    {% for r in routes %}
+    <a class="route-card tappable" href="/routes/{{ r.id }}">
+      <span class="rc-name">{{ r.name }}</span>
+      <span class="rc-meta">{{ '%.1f' % (r.distance_meters / 1000) if r.distance_meters else '—' }} km
+        · {{ r.sport_type }} · {{ r.stats.attempts }} attempt{{ 's' if r.stats.attempts != 1 }}</span>
+      {% if r.stats.best_time_seconds %}
+      <span class="rc-pb">PB <b>{{ format_duration(r.stats.best_time_seconds) }}</b>
+        {% if r.stats.latest_vs_pb_seconds is not none and r.stats.attempts > 1 %}
+        · last {{ '+' if r.stats.latest_vs_pb_seconds > 0 }}{{ format_duration(r.stats.latest_vs_pb_seconds | abs) }} vs PB
+        {% endif %}</span>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  {{ ui.empty_state('No routes named yet.',
+      'Your GPS runs are already here — save one as a route below and ORION starts tracking attempts, bests and pace trends on it.') }}
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Import GPX</h2>
+  <form method="post" action="/routes/import-gpx" enctype="multipart/form-data" class="import-zone">
+    <input type="file" name="file" accept=".gpx" required>
+    <label class="f" style="width:100%">Name (optional)
+      <input type="text" name="name" maxlength="120" placeholder="Falls into place from the file if blank">
+    </label>
+    <button type="submit" class="ghost">Import route</button>
+  </form>
+  <p class="hint" style="margin-top:8px">Routes also export back out as GPX from their
+  detail page — nothing is trapped here.</p>
+</section>
+</div>
+
+<div class="col">
+<section class="panel">
+  <h2>Recent GPS workouts</h2>
+  {% if workouts %}
+  <div class="rows">
+    {% for w in workouts %}
+    <div class="route-card">
+      <span class="rc-name">{{ w.workout.title }} · {{ w.workout.started_at.strftime('%d %b') }}</span>
+      <span class="rc-meta">{{ '%.1f' % (w.workout.distance_meters / 1000) if w.workout.distance_meters else '—' }} km
+        · {{ w.duration }} · {{ w.pace }}/km</span>
+      {% if w.route_id %}
+      <a class="suggest-chip" href="/routes/{{ w.route_id }}">assigned → view route</a>
+      {% else %}
+      <div class="btnrow compact" style="margin-top:4px">
+        {% if w.suggestion %}
+        <form method="post" action="/routes/{{ w.suggestion.route_id }}/assign">
+          <input type="hidden" name="workout_id" value="{{ w.workout.id }}">
+          <button type="submit" class="btn ghost">Looks like {{ w.suggestion.route_name }} · {{ '%.0f' % w.suggestion.confidence }}%</button>
+        </form>
+        {% endif %}
+        <form method="post" action="/routes/create">
+          <input type="hidden" name="workout_id" value="{{ w.workout.id }}">
+          <input type="hidden" name="name" value="{{ w.workout.title }} {{ '%.1f' % (w.workout.distance_meters / 1000) if w.workout.distance_meters else '' }}km">
+          <button type="submit" class="btn ghost">Save as route</button>
+        </form>
+        <a class="btn ghost" href="/data/export/workouts/{{ w.workout.id }}.gpx">GPX</a>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="hint" style="margin-top:10px">Suggestions compare distance, start and end
+  points; nothing is merged without your say-so.</p>
+  {% else %}
+  {{ ui.empty_state('No GPS traces yet.',
+      'Runs imported from Health Auto Export carry their GPS route automatically — import on the Data tab and they land here.', '/data', 'Open Data Vault') }}
+  {% endif %}
+</section>
+</div>
+</div>
+{% endblock %}

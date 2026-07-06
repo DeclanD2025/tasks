@@ -16,7 +16,7 @@ from app.ingestion.base import Connector
 
 class MoneyboxConnector(Connector):
     key = "moneybox"
-    name = "Moneybox"
+    name = "LISA / Moneybox"
     domain = Domain.finance
     is_mock = True
 

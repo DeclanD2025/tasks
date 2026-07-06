@@ -15,8 +15,8 @@ from __future__ import annotations
 import math
 import random
 
-from PySide6.QtCore import QPointF, Qt, QTimer
-from PySide6.QtGui import QColor, QPainter, QRadialGradient
+from PySide6.QtCore import Property, QPointF, Qt, QTimer
+from PySide6.QtGui import QColor, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import QWidget
 
 from app.ui.themes.theme import PALETTE
@@ -77,13 +77,23 @@ class ConstellationBackground(QWidget):
         self._anchor = orion_anchor
         self._field: list[_Star] = []
         self._t = 0.0
+        self._warp = 0.0
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        self._timer.start(50)  # 20 fps is plenty for a calm twinkle
+        self._timer.start(125)  # calm twinkle without burning the main thread
 
     def _tick(self) -> None:
-        self._t += 0.05
+        self._t += 0.05 * (1.0 + self._warp * 4.5)
         self.update()
+
+    def _get_warp_factor(self) -> float:
+        return self._warp
+
+    def _set_warp_factor(self, value: float) -> None:
+        self._warp = max(0.0, min(1.0, float(value)))
+        self.update()
+
+    warp_factor = Property(float, _get_warp_factor, _set_warp_factor)
 
     def resizeEvent(self, event):  # noqa: N802 (Qt naming)
         self._regenerate()
@@ -117,6 +127,7 @@ class ConstellationBackground(QWidget):
 
         # Background field.
         star_col = QColor(PALETTE.star)
+        cx, cy = w * 0.52, h * 0.46
         for s in self._field:
             tw = 0.5 + 0.5 * math.sin(self._t * s.speed + s.phase)
             alpha = int(255 * s.base * tw * self._dim)
@@ -124,6 +135,18 @@ class ConstellationBackground(QWidget):
             p.setBrush(star_col)
             p.setPen(Qt.NoPen)
             p.drawEllipse(QPointF(s.x, s.y), s.radius, s.radius)
+            if self._warp > 0.02:
+                dx, dy = s.x - cx, s.y - cy
+                length = math.hypot(dx, dy) or 1.0
+                ux, uy = dx / length, dy / length
+                streak = 10 + 42 * self._warp * (0.35 + s.base)
+                sc = QColor(PALETTE.accent)
+                sc.setAlpha(int(95 * self._warp * self._dim * (0.35 + s.base)))
+                p.setPen(QPen(sc, max(0.8, 1.4 * self._warp)))
+                p.drawLine(
+                    QPointF(s.x - ux * streak * 0.25, s.y - uy * streak * 0.25),
+                    QPointF(s.x + ux * streak, s.y + uy * streak),
+                )
 
         self._paint_orion(p, w, h)
         p.end()

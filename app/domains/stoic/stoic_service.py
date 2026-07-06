@@ -41,8 +41,11 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 import numpy as np
+from sqlalchemy import select
 
 from app import services
+from app.db.database import session_scope
+from app.db.models import StoicEntry
 
 
 # Birth date used only for the memento-mori life-weeks instrument. Override via
@@ -113,6 +116,20 @@ class StoicPractice:
 
 
 @dataclass
+class StoicLogItem:
+    id: int
+    day: date
+    virtue_focus: str
+    control_pct: int
+    reflected: bool
+    served_others: bool
+    faced_hard_thing: bool
+    restrained_impulse: bool
+    study_minutes: int
+    reflection: str
+
+
+@dataclass
 class StoicSnapshot:
     title: str = "Stoic Observatory"
     subtitle: str = "The measured path to eudaimonia"
@@ -132,6 +149,7 @@ class StoicSnapshot:
     life_weeks_lived: int = 0
     life_weeks_total: int = 0
     reflections: list[dict] = field(default_factory=list)  # insight-style rows
+    checkins: list[StoicLogItem] = field(default_factory=list)
 
 
 # A small local table of Stoic maxims. Deterministic selection — no API.
@@ -164,6 +182,69 @@ MIN_COVERAGE = 0.30
 
 def _fmt_hours(minutes: float) -> str:
     return f"{minutes / 60:.1f}h/day"
+
+
+def _score_hits(entries: list[StoicLogItem], attr: str, days: int = 14) -> tuple[float, str]:
+    recent = [e for e in entries if e.day >= date.today() - timedelta(days=days - 1)]
+    if not recent:
+        return 0.0, "no local check-ins"
+    hits = sum(1 for e in recent if bool(getattr(e, attr)))
+    return hits / days, f"{hits}/{days} days"
+
+
+def _recent_entries(user_id: int, days: int = 30) -> list[StoicLogItem]:
+    since = date.today() - timedelta(days=days)
+    with session_scope() as s:
+        rows = s.scalars(
+            select(StoicEntry).where(StoicEntry.user_id == user_id)
+            .where(StoicEntry.day >= since)
+            .order_by(StoicEntry.day.desc())
+        ).all()
+        return [
+            StoicLogItem(
+                r.id,
+                r.day,
+                r.virtue_focus,
+                r.control_pct,
+                bool(r.reflected),
+                bool(r.served_others),
+                bool(r.faced_hard_thing),
+                bool(r.restrained_impulse),
+                r.study_minutes,
+                r.reflection,
+            )
+            for r in rows
+        ]
+
+
+def upsert_today_entry(
+    user_id: int,
+    *,
+    virtue_focus: str,
+    control_pct: int,
+    reflected: bool,
+    served_others: bool,
+    faced_hard_thing: bool,
+    restrained_impulse: bool,
+    study_minutes: int,
+    reflection: str,
+) -> None:
+    today = date.today()
+    with session_scope() as s:
+        row = s.scalars(
+            select(StoicEntry).where(StoicEntry.user_id == user_id, StoicEntry.day == today)
+        ).first()
+        if row is None:
+            row = StoicEntry(user_id=user_id, day=today)
+            s.add(row)
+        row.virtue_focus = virtue_focus.strip() or "wisdom"
+        row.control_pct = max(0, min(100, int(control_pct)))
+        row.reflected = bool(reflected)
+        row.served_others = bool(served_others)
+        row.faced_hard_thing = bool(faced_hard_thing)
+        row.restrained_impulse = bool(restrained_impulse)
+        row.study_minutes = max(0, min(600, int(study_minutes)))
+        row.reflection = reflection.strip()
 
 
 # --------------------------------------------------------------------------- #
@@ -233,7 +314,7 @@ def _equanimity(user_id: int) -> tuple[Signal, list[float]]:
 # --------------------------------------------------------------------------- #
 # Cardinal virtues — REAL where a source exists, NO DATA otherwise
 # --------------------------------------------------------------------------- #
-def _virtues(user_id: int) -> list[Virtue]:
+def _virtues(user_id: int, entries: list[StoicLogItem]) -> list[Virtue]:
     af = services.activity_frame(user_id)
     hf = services.health_frame(user_id)
     ms = services.monthly_spending(user_id)
@@ -249,7 +330,12 @@ def _virtues(user_id: int) -> list[Virtue]:
         wf.append(Factor("Deep work", _fmt_hours(deep), _clamp(deep / 240) * 0.8, 0.8, True))
     else:
         wf.append(Factor("Deep work", "no source", 0.0, 0.8, False))
-    wf.append(Factor("Study time", "source not wired", 0.0, 0.2, False))
+    study_entries = [e for e in entries if e.study_minutes > 0]
+    if study_entries:
+        study = float(np.mean([e.study_minutes for e in study_entries[:14]]))
+        wf.append(Factor("Study check-ins", _fmt_hours(study), _clamp(study / 120) * 0.2, 0.2, True))
+    else:
+        wf.append(Factor("Study check-ins", "no local entries", 0.0, 0.2, False))
     w_score, w_cov = _score_from_factors(wf)
     virtues.append(Virtue(
         "wisdom", "Wisdom", "sophia", w_score,
@@ -265,7 +351,8 @@ def _virtues(user_id: int) -> list[Virtue]:
         cf.append(Factor("Training load", f"{load:.0f}/100", _clamp(load / 100) * 0.7, 0.7, True))
     else:
         cf.append(Factor("Training load", "no source", 0.0, 0.7, False))
-    cf.append(Factor("Hard tasks faced", "source not wired", 0.0, 0.3, False))
+    hard_unit, hard_readout = _score_hits(entries, "faced_hard_thing")
+    cf.append(Factor("Hard things faced", hard_readout, hard_unit * 0.3, 0.3, bool(entries)))
     c_score, c_cov = _score_from_factors(cf)
     virtues.append(Virtue(
         "courage", "Courage", "andreia", c_score,
@@ -280,15 +367,18 @@ def _virtues(user_id: int) -> list[Virtue]:
         prev = ms["spend"].iloc[-2] or 1
         disc = _clamp(1.0 - (ms["spend"].iloc[-1] - prev) / prev)
         delta = (ms["spend"].iloc[-1] - prev) / prev
-        tf.append(Factor("Spending discipline", f"{delta:+.0%} vs last mo", disc * 0.5, 0.5, True))
+        tf.append(Factor("Spending discipline", f"{delta:+.0%} vs last mo", disc * 0.35, 0.35, True))
     else:
-        tf.append(Factor("Spending discipline", "no source", 0.0, 0.5, False))
+        tf.append(Factor("Spending discipline", "no source", 0.0, 0.35, False))
     if has_hf and hf["sleep_minutes"].dropna().shape[0] >= 4:
         s = hf["sleep_minutes"].dropna()
         sleep_reg = _clamp(1.0 - (s.tail(14).std() / (s.tail(14).mean() or 1)) * 2.5)
-        tf.append(Factor("Sleep regularity", f"{sleep_reg:.0%}", sleep_reg * 0.5, 0.5, True))
+        tf.append(Factor("Sleep regularity", f"{sleep_reg:.0%}", sleep_reg * 0.35, 0.35, True))
     else:
-        tf.append(Factor("Sleep regularity", "no source", 0.0, 0.5, False))
+        tf.append(Factor("Sleep regularity", "no source", 0.0, 0.35, False))
+    restraint_unit, restraint_readout = _score_hits(entries, "restrained_impulse")
+    tf.append(Factor("Restrained impulse", restraint_readout, restraint_unit * 0.30, 0.30,
+                     bool(entries)))
     t_score, t_cov = _score_from_factors(tf)
     virtues.append(Virtue(
         "temperance", "Temperance", "sophrosyne", t_score,
@@ -297,16 +387,18 @@ def _virtues(user_id: int) -> list[Virtue]:
         tf, t_cov,
     ))
 
-    # --- Justice: attention to others — NO honest source yet ---
+    # --- Justice: attention to others — local check-ins until calendar people-time lands ---
+    served_unit, served_readout = _score_hits(entries, "served_others")
     jf = [
-        Factor("Time given to others", "source not wired", 0.0, 0.6, False),
-        Factor("Served-others check-in", "source not wired", 0.0, 0.4, False),
+        Factor("Served-others check-in", served_readout, served_unit * 0.7, 0.7,
+               bool(entries)),
+        Factor("People-time source", "calendar source not wired", 0.0, 0.3, False),
     ]
     j_score, j_cov = _score_from_factors(jf)  # -> None, low coverage
     virtues.append(Virtue(
         "justice", "Justice", "dikaiosyne", j_score,
-        "No signal yet — wire a calendar / people-time source or use the daily "
-        "check-in to measure attention given to others.",
+        _virtue_note(j_score, "Justice has a lived signal: attention given outward.",
+                     "Look for one concrete service to another person today."),
         jf, j_cov,
     ))
 
@@ -329,7 +421,10 @@ def _virtue_note(score: float | None, high: str, low: str) -> str:
 PRACTICE_MIN_MINUTES = 3
 
 
-def _practices(user_id: int) -> tuple[list[StoicPractice], float | None, bool]:
+def _practices(
+    user_id: int,
+    entries: list[StoicLogItem],
+) -> tuple[list[StoicPractice], float | None, bool]:
     """Reflective-practice signal, ingested rather than re-asked.
 
     The Stoic app (and Mindfulness/Calm/etc.) write Mindfulness sessions to Apple
@@ -339,12 +434,17 @@ def _practices(user_id: int) -> tuple[list[StoicPractice], float | None, bool]:
     honestly untracked.
     """
     pf = services.practice_frame(user_id, days=30)
-    if pf.empty:
+    local_reflections = {e.day for e in entries if e.reflected}
+    if pf.empty and not local_reflections:
         return ([StoicPractice("Reflective Practice", "STO-PRA", False, 0, tracked=False)], None,
                 False)
 
-    by_day = {row["day"]: float(row["mindful_minutes"]) for _, row in pf.iterrows()}
+    by_day = {} if pf.empty else {
+        row["day"]: float(row["mindful_minutes"]) for _, row in pf.iterrows()
+    }
     today = date.today()
+    for entry_day in local_reflections:
+        by_day[entry_day] = max(by_day.get(entry_day, 0.0), float(PRACTICE_MIN_MINUTES))
     # Current streak: consecutive days up to today meeting the threshold.
     streak = 0
     d = today
@@ -358,18 +458,18 @@ def _practices(user_id: int) -> tuple[list[StoicPractice], float | None, bool]:
     done_today = by_day.get(today, 0.0) >= PRACTICE_MIN_MINUTES
 
     total_min = sum(by_day.values())
-    practice = StoicPractice(
-        "Reflective Practice", "STO-PRA", done_today, streak, tracked=True,
+    source = "Apple Health + local check-ins" if not pf.empty and local_reflections else (
+        "Apple Health Mindfulness" if not pf.empty else "local check-ins"
     )
-    # Stash a readable detail on the object via attributes the UI can show.
-    practice.detail = f"{hits}/14 days · {total_min:.0f} mindful min (Apple Health)"
+    practice = StoicPractice("Reflective Practice", "STO-PRA", done_today, streak, tracked=True)
+    practice.detail = f"{hits}/14 days · {total_min:.0f} mindful min ({source})"
     return [practice], consistency, True
 
 
 # --------------------------------------------------------------------------- #
 # Dichotomy of control — REAL: controllable effort vs external volatility
 # --------------------------------------------------------------------------- #
-def _control(user_id: int) -> Signal:
+def _control(user_id: int, entries: list[StoicLogItem]) -> Signal:
     af = services.activity_frame(user_id)
     factors: list[Factor] = []
     controllable = 0.0
@@ -384,15 +484,25 @@ def _control(user_id: int) -> Signal:
     if not nw.empty and len(nw) > 2:
         external = float(np.std(np.diff(nw["value"].to_numpy()))) or 1.0
 
+    local = [e.control_pct / 100 for e in entries[:14]]
+    if not real and local:
+        ratio = float(np.mean(local))
+        factors.append(Factor("Local control check-in", f"{ratio * 100:.0f}%", ratio, 1.0, True))
+        return Signal(ratio, factors, 1.0)
     if not real:
         factors.append(Factor("Controllable effort", "no source", 0.0, 1.0, False))
         return Signal(None, factors, 0.0)
 
     raw = controllable / (controllable + external * 4 + 1)
     ratio = _clamp(0.5 + 0.5 * raw)  # honest blend, no random nudge
+    if local:
+        ratio = _clamp((ratio * 0.55) + (float(np.mean(local)) * 0.45))
     factors.append(Factor("Deliberate effort (7d)", f"{controllable / 60:.1f}h",
                           ratio, 0.7, True))
     factors.append(Factor("External volatility", f"σ {external:,.0f}", 0.0, 0.3, True))
+    if local:
+        factors.append(Factor("Local control check-in", f"{float(np.mean(local)) * 100:.0f}%",
+                              float(np.mean(local)), 0.45, True))
     return Signal(ratio, factors, 1.0)
 
 
@@ -404,7 +514,12 @@ def _life_weeks() -> tuple[int, int]:
     return lived, total
 
 
-def _reflections(virtues: list[Virtue], equ: Signal, control: Signal) -> list[dict]:
+def _reflections(
+    virtues: list[Virtue],
+    equ: Signal,
+    control: Signal,
+    entries: list[StoicLogItem],
+) -> list[dict]:
     out: list[dict] = []
     measured = [v for v in virtues if v.has_data]
     unmeasured = [v for v in virtues if not v.has_data]
@@ -449,6 +564,12 @@ def _reflections(virtues: list[Virtue], equ: Signal, control: Signal) -> list[di
                 "title": "Your effort is well-aimed at the controllable.",
                 "body": "This is the heart of the discipline of desire.",
             })
+    for entry in [e for e in entries if e.reflection.strip()][:3]:
+        out.append({
+            "domain": "stoic", "severity": "info",
+            "title": f"{entry.day.strftime('%d %b')} reflection · {entry.virtue_focus.title()}",
+            "body": entry.reflection,
+        })
     return out
 
 
@@ -469,10 +590,11 @@ def get_stoic_snapshot(user_id: int | None) -> StoicSnapshot:
     if user_id is None:
         return snap
 
-    virtues = _virtues(user_id)
+    entries = _recent_entries(user_id)
+    virtues = _virtues(user_id, entries)
     equ, equ_trend = _equanimity(user_id)
-    practices, consistency, tracked = _practices(user_id)
-    control = _control(user_id)
+    practices, consistency, tracked = _practices(user_id, entries)
+    control = _control(user_id, entries)
 
     # Eudaimonia index = mean(measured virtues) modulated by equanimity and (if
     # tracked) practice. Built ONLY from real signals; None if too little data.
@@ -520,5 +642,6 @@ def get_stoic_snapshot(user_id: int | None) -> StoicSnapshot:
     snap.maxim, snap.maxim_author = _MAXIMS[maxim_idx]
     snap.life_weeks_lived = lived
     snap.life_weeks_total = total
-    snap.reflections = _reflections(virtues, equ, control)
+    snap.reflections = _reflections(virtues, equ, control, entries)
+    snap.checkins = entries
     return snap

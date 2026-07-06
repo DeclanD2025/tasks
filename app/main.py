@@ -55,6 +55,11 @@ class RootWindow(QMainWindow):
 
 def _bootstrap_data() -> None:
     """Ensure schema + demo data exist on first launch (idempotent)."""
+    from app.core.config import migrate_db_to_icloud_if_needed
+
+    moved = migrate_db_to_icloud_if_needed()
+    if moved:
+        log.info("iCloud sync: %s", moved)
     init_db()
     if get_default_user_id() is None:
         log.info("First run: seeding demo data.")

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#030304">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/orion-icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/orion-icon.svg">
+  <title>{% block title %}ORION{% endblock %}</title>
+  <link rel="stylesheet" href="/static/orion.css">
+  <script src="/static/orion.js" defer></script>
+  <script src="/static/orion-charts.js" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body data-theme="{{ theme_intensity or 'cinematic' }}">
+  <div class="atmosphere" aria-hidden="true">
+    <svg viewBox="0 0 720 900" preserveAspectRatio="xMidYMin slice" xmlns="http://www.w3.org/2000/svg">
+      <!-- Orion over the first viewport; the belt carries the light -->
+      <g stroke="rgba(200,208,216,0.07)" stroke-width="0.9">
+        <line x1="392" y1="96"  x2="300" y2="188"/>
+        <line x1="392" y1="96"  x2="484" y2="206"/>
+        <line x1="300" y1="188" x2="336" y2="392"/>
+        <line x1="484" y1="206" x2="412" y2="352"/>
+        <line x1="412" y1="352" x2="374" y2="372"/>
+        <line x1="374" y1="372" x2="336" y2="392"/>
+        <line x1="336" y1="392" x2="318" y2="560"/>
+        <line x1="412" y1="352" x2="474" y2="540"/>
+      </g>
+      <g fill="rgba(200,208,216,0.22)">
+        <circle cx="392" cy="96"  r="1.2"/>
+        <circle cx="300" cy="188" r="2"/>
+        <circle cx="484" cy="206" r="1.7"/>
+        <circle cx="318" cy="560" r="1.5"/>
+        <circle cx="474" cy="540" r="2.1"/>
+      </g>
+      <g fill="rgba(190,225,240,0.38)">
+        <circle cx="412" cy="352" r="2.1"/>
+        <circle cx="374" cy="372" r="2.1"/>
+        <circle cx="336" cy="392" r="2.1"/>
+      </g>
+      <g fill="rgba(200,208,216,0.13)">
+        <circle cx="96"  cy="140" r="1"/>
+        <circle cx="640" cy="110" r="1.1"/>
+        <circle cx="70"  cy="430" r="0.9"/>
+        <circle cx="662" cy="392" r="1"/>
+        <circle cx="130" cy="700" r="1"/>
+        <circle cx="600" cy="760" r="1.1"/>
+        <circle cx="240" cy="640" r="0.8"/>
+        <circle cx="560" cy="640" r="0.9"/>
+        <circle cx="180" cy="300" r="0.8"/>
+        <circle cx="580" cy="300" r="0.8"/>
+      </g>
+    </svg>
+  </div>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="wrap">
+    {% if active != 'login' %}
+    <header class="masthead">
+      <span class="brand"><span class="live" aria-hidden="true"></span>Orion</span>
+      <div class="masthead-right">
+        <button type="button" class="weather-pill" data-weather-pill data-drawer-signal="weather"
+                aria-label="Weather — open forecast">
+          {% if weather_pill %}
+          <span class="w-glyph" aria-hidden="true">{{ weather_pill.glyph }}</span>
+          <span class="w-temp">{{ weather_pill.temp }}°</span>
+          <span class="w-cond">{{ weather_pill.label }}</span>
+          {% else %}
+          <span class="w-cond">weather</span>
+          {% endif %}
+        </button>
+        <span class="stamp">{{ today_date.strftime('%a %d %b') | upper }}</span>
+      </div>
+    </header>
+    <div class="pagehead">
+      <h1>{% block heading %}{% endblock %}</h1>
+      {% if module_code %}<span class="code">{{ module_code }}</span>{% endif %}
+    </div>
+    {% block statusline %}{% endblock %}
+    {% endif %}
+    <main id="main">
+    {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  {% if active != 'login' %}
+  <div id="sync-status" class="sync-status" role="status" aria-live="polite" hidden></div>
+
+  <nav class="dock" aria-label="Primary">
+    {% for key, href, label in NAV_DOCK %}
+    <a href="{{ href }}" class="{{ 'active' if active == key else '' }}"
+       {% if active == key %}aria-current="page"{% endif %}>
+      <span class="i" aria-hidden="true">
+        {% if key == 'today' %}
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="8.5" stroke-dasharray="2.4 3.4"/></svg>
+        {% elif key == 'training' %}
+        <svg viewBox="0 0 24 24"><path d="M4 12h3l2.5-5.5L14 17l2.5-5H20"/></svg>
+        {% elif key == 'health' %}
+        <svg viewBox="0 0 24 24"><path d="M12 20s-7-4.7-7-10a4.1 4.1 0 0 1 7-2.8A4.1 4.1 0 0 1 19 10c0 5.3-7 10-7 10z"/></svg>
+        {% elif key == 'nutrition' %}
+        <svg viewBox="0 0 24 24"><path d="M12 3v4"/><path d="M7 8c0 6 2.2 13 5 13s5-7 5-13a5 5 0 0 0-10 0z"/></svg>
+        {% elif key == 'mind' %}
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3" stroke-dasharray="1 2.4"/></svg>
+        {% endif %}
+      </span>
+      <span class="t">{{ label }}</span>
+    </a>
+    {% endfor %}
+    <button type="button" class="more-btn {{ 'active' if active in ['routes','calendar','tasks','money','data','settings'] }}"
+            data-more-toggle aria-haspopup="true" aria-expanded="false" aria-controls="more-sheet">
+      <span class="i" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>
+      </span>
+      <span class="t">More</span>
+    </button>
+  </nav>
+
+  <div class="sheet-backdrop" data-sheet-backdrop hidden></div>
+  <div id="more-sheet" class="more-sheet" role="dialog" aria-label="More modules" hidden>
+    <div class="sheet-grip" aria-hidden="true"></div>
+    {% for key, href, label, hint in NAV_MORE %}
+    <a href="{{ href }}" class="more-item {{ 'active' if active == key else '' }}">
+      <span class="more-label">{{ label }}</span>
+      <span class="more-hint">{{ hint }}</span>
+    </a>
+    {% endfor %}
+    <form method="post" action="/logout" class="more-lock">
+      <button type="submit">Lock session</button>
+    </form>
+  </div>
+
+  <div class="drawer-backdrop" data-drawer-backdrop hidden></div>
+  <aside class="drawer" data-drawer role="dialog" aria-modal="true" aria-label="Detail" hidden>
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <button type="button" class="drawer-close" data-drawer-close aria-label="Close detail">✕</button>
+    <div class="drawer-body" data-drawer-body>
+      <div class="drawer-loading">Reading telemetry…</div>
+    </div>
+  </aside>
+  {% endif %}
+</body>
+</html>

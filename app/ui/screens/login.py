@@ -36,7 +36,7 @@ class LoginScreen(QWidget):
         self.setObjectName("LoginScreen")
 
         # Full-bleed animated star field with Orion highlighted.
-        self._bg = ConstellationBackground(self, density=260, dim=1.0,
+        self._bg = ConstellationBackground(self, density=150, dim=1.0,
                                            orion_anchor=(0.30, 0.46))
 
         # Centred glass card.

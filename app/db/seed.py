@@ -33,10 +33,10 @@ from app.db.models import (
     Project,
     ProjectMetricDaily,
     SourceStatus,
-    Transaction,
     User,
 )
 from app.ingestion import get_connector, iter_connectors
+from app.sync import ensure_sync_foundation
 
 log = get_logger(__name__)
 
@@ -70,30 +70,21 @@ def _ensure_sources(s, user_id: int) -> dict[str, int]:
 
 
 def _seed_finance(s, user_id: int, source_ids: dict[str, int]) -> None:
-    # Current account from Open Banking transactions.
-    current = Account(user_id=user_id, source_id=source_ids["open_banking"],
-                      name="Current Account", kind="current", currency="GBP")
-    s.add(current)
-    s.flush()
-    txns = get_connector("open_banking").fetch_raw_data()
-    running = 320_000
-    by_day: dict[date, int] = {}
-    for t in sorted(txns, key=lambda x: x["date"]):
-        d = date.fromisoformat(t["date"])
-        s.add(Transaction(account_id=current.id, booked_at=d,
-                          amount_minor=t["amount_minor"], currency="GBP",
-                          category=t["category"], description=t["merchant"]))
-        running += t["amount_minor"]
-        by_day[d] = running
-    for d, bal in by_day.items():
-        s.add(BalanceSnapshot(account_id=current.id, snapshot_date=d,
-                              balance_minor=bal, currency="GBP"))
+    # Current account from Open Banking. The connector owns the provider-specific
+    # shape so the seeder stays aligned with both mock and live-normalized rows.
+    open_banking = get_connector("open_banking")
+    open_banking.store_normalised_data(
+        s,
+        user_id,
+        source_ids["open_banking"],
+        open_banking.fetch_raw_data(),
+    )
 
     # Investment / crypto / savings balance accounts.
     for key, name, kind in [
         ("trading212", "Trading 212", "investment"),
         ("coinbase", "Coinbase", "crypto"),
-        ("moneybox", "Moneybox", "savings"),
+        ("moneybox", "Lifetime ISA", "savings"),
     ]:
         acct = Account(user_id=user_id, source_id=source_ids[key], name=name,
                        kind=kind, currency="GBP")
@@ -172,7 +163,9 @@ def seed(*, reset: bool = False, force: bool = False) -> None:
         user_id = user.id
 
     count = generate_insights(user_id)
+    sync = ensure_sync_foundation()
     log.info("Seed complete. Generated %d insights.", count)
+    log.info("Sync foundation ready. Pending outbox records: %s.", sync["pending_outbox"])
 
 
 def main() -> None:

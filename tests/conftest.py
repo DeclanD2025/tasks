@@ -16,8 +16,11 @@ import pytest
 def _temp_db():
     tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
     tmp.close()
+    hae_tmp = tempfile.TemporaryDirectory()
     os.environ["ORION_DATABASE_URL"] = f"sqlite:///{tmp.name}"
     os.environ["ORION_ENV"] = "development"
+    os.environ["ORION_HAE_FOLDER"] = hae_tmp.name
+    os.environ["ORION_SIGNALS_OFFLINE"] = "1"  # tests never hit live signal APIs
 
     # Import after env is set so settings pick it up.
     from app.core.config import get_settings
@@ -28,6 +31,7 @@ def _temp_db():
 
     seed(reset=True)
     yield
+    hae_tmp.cleanup()
     try:
         os.unlink(tmp.name)
     except OSError:

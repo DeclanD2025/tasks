@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}ORION — Fuel{% endblock %}
+{% block heading %}Nutrition Fuel{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  <span>{{ '%.0f' % snap.totals.calories }} kcal</span>
+  <span>{{ '%.0f' % snap.totals.protein }}g protein</span>
+  <span>{{ '%.0f' % snap.totals.fibre }}g fibre</span>
+  <span>{{ snap.water_ml | int }}ml water</span>
+  {% if not is_today %}<span class="alert">viewing {{ view_day.strftime('%d %b') }}</span>{% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+{{ ui.toast(saved_note) }}
+
+<div class="cols">
+<div class="col">
+<section class="panel hero">
+  <h2>{{ 'Today' if is_today else view_day.strftime('%A %d %B') }}</h2>
+  <div class="macro-band">
+    {% for key, label, unit in [('calories','Calories',' kcal'), ('protein','Protein','g'), ('fibre','Fibre','g'), ('water','Water','ml')] %}
+    {% set total = snap.water_ml if key == 'water' else snap.totals[key] %}
+    {% set target = snap.targets.water_ml if key == 'water' else snap.targets[key] %}
+    {% set pct = snap.pct[key] %}
+    <div class="macro">
+      <div class="mv">{{ '%.0f' % total }}<small>{{ unit }} / {{ '%.0f' % target if target else '—' }}</small></div>
+      <div class="ml">{{ label }}</div>
+      <div class="bar"><i class="{{ 'over' if key == 'calories' and pct is not none and pct >= 110 else '' }}"
+           style="width: {{ [pct or 0, 100] | min }}%"></i></div>
+    </div>
+    {% endfor %}
+  </div>
+  {% if snap.insights %}
+  <div class="directive-primary" style="margin-top:16px">
+    <span class="tag">Read</span>{{ snap.insights | join(' ') }}
+  </div>
+  {% endif %}
+</section>
+
+<div class="fuel-actions" aria-label="Log food">
+  <a class="fa" href="/nutrition/scan">
+    <svg viewBox="0 0 24 24"><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><path d="M7 12h.5M10 12h1M14 12h.5M17 12h.5" stroke-width="2.4"/></svg>
+    Scan barcode
+  </a>
+  <button type="button" class="fa" data-focus-search>
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+    Search food
+  </button>
+  <button type="button" class="fa" data-reveal="#quick-add">
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    Quick add
+  </button>
+  <form method="post" action="/nutrition/repeat-yesterday" style="display:contents">
+    <button type="submit" class="fa">
+      <svg viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 2 7.5"/><path d="M4 4v6h6"/></svg>
+      Repeat yesterday
+    </button>
+  </form>
+</div>
+
+<section class="panel">
+  <h2>Find food</h2>
+  <label class="f" for="food-search">Search — your foods, UK generics, Open Food Facts
+    <input type="search" id="food-search" data-food-search placeholder="chicken, oats, yogurt…"
+           autocomplete="off" spellcheck="false">
+  </label>
+  <div class="search-results" data-search-results></div>
+
+  <form method="post" action="/nutrition/log" class="stack" data-log-form data-keep-values hidden
+        style="margin-top:12px; border-top:1px solid var(--line); padding-top:14px">
+    <input type="hidden" name="name" value="">
+    <input type="hidden" name="food_id" value="">
+    <input type="hidden" name="food_payload" value="">
+    <input type="hidden" name="source" value="search">
+    <input type="hidden" name="day" value="{{ view_day.isoformat() }}">
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+      <label class="f">Weight (g)
+        <input type="number" name="grams" min="1" max="3000" step="1" inputmode="numeric">
+      </label>
+      <label class="f">Meal
+        <select name="meal_type">
+          {% for m in meal_types %}<option value="{{ m }}">{{ m | title }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="hint"><span data-portion-note></span> <b data-portion-preview></b></div>
+    <button type="submit" class="primary">Log it</button>
+  </form>
+</section>
+
+<section class="panel" id="quick-add">
+  <h2>Quick add</h2>
+  <form method="post" action="/nutrition/quick" class="stack" data-offline-queue data-offline-label="quick add">
+    <div class="grid" style="grid-template-columns: 2fr 1fr 1fr;">
+      <label class="f">Name
+        <input type="text" name="name" placeholder="Lunch out" maxlength="120">
+      </label>
+      <label class="f">kcal
+        <input type="number" name="calories" min="0" max="4000" inputmode="numeric" required>
+      </label>
+      <label class="f">Protein g
+        <input type="number" name="protein" min="0" max="300" inputmode="numeric">
+      </label>
+    </div>
+    <div class="grid" style="grid-template-columns: 1fr auto;">
+      <label class="f">Meal
+        <select name="meal_type">
+          {% for m in meal_types %}<option value="{{ m }}">{{ m | title }}</option>{% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="primary" style="align-self:end">Add</button>
+    </div>
+  </form>
+  <div class="water-row" style="margin-top:14px">
+    {% for ml, label in [(250, '+250ml'), (500, '+500ml'), (568, '+pint')] %}
+    <form method="post" action="/nutrition/water">
+      <input type="hidden" name="ml" value="{{ ml }}">
+      <button type="submit" class="water-dot">{{ label }}</button>
+    </form>
+    {% endfor %}
+    <span class="wr-status">{{ snap.water_ml | int }} / {{ snap.targets.water_ml | int }} ml</span>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Meal timeline</h2>
+  {% if snap.logged_anything %}
+  {% for meal in snap.meals %}
+  <div class="meal-block">
+    <div class="mb-head">
+      <h3>{{ meal.label }}</h3>
+      <span class="mb-cal">{{ '%.0f' % meal.calories }} kcal · {{ '%.0f' % meal.protein }}g protein</span>
+    </div>
+    <div class="meal-items">
+      {% for item in meal['items'] %}
+      <div class="meal-item">
+        <span class="mi-name">{{ item.name }}</span>
+        <span class="mi-meta">{% if item.grams %}{{ '%.0f' % item.grams }}g · {% endif %}{{ '%.0f' % (item.calories or 0) }} kcal</span>
+        <form method="post" action="/nutrition/logs/{{ item.id }}/delete">
+          <button type="submit" class="mi-del" aria-label="Remove {{ item.name }}">✕</button>
+        </form>
+      </div>
+      {% else %}
+      <p class="hint">Nothing logged.</p>
+      {% endfor %}
+    </div>
+    {% if meal['items'] %}
+    <div class="btnrow compact" style="margin-top:6px">
+      <form method="post" action="/nutrition/templates/from-meal">
+        <input type="hidden" name="day" value="{{ view_day.isoformat() }}">
+        <input type="hidden" name="meal_type" value="{{ meal.meal_type }}">
+        <input type="hidden" name="name" value="">
+        <button type="submit" class="btn ghost">Save as meal</button>
+      </form>
+      {% if not is_today %}
+      <form method="post" action="/nutrition/repeat-meal">
+        <input type="hidden" name="from_day" value="{{ view_day.isoformat() }}">
+        <input type="hidden" name="meal_type" value="{{ meal.meal_type }}">
+        <button type="submit" class="btn ghost">Repeat today</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% else %}
+  {{ ui.empty_state('No fuel logged ' ~ ('today yet' if is_today else 'this day') ~ '.',
+      'Scan a barcode, search a food, or quick-add calories — the first entry takes ten seconds and the day builds from there.') }}
+  {% endif %}
+  <div class="btnrow compact" style="margin-top:12px">
+    <a class="btn ghost" href="/nutrition?day={{ prev_day.isoformat() }}">← {{ prev_day.strftime('%d %b') }}</a>
+    {% if not is_today %}
+    <a class="btn ghost" href="/nutrition">Today</a>
+    <a class="btn ghost" href="/nutrition?day={{ next_day.isoformat() }}">{{ next_day.strftime('%d %b') }} →</a>
+    {% endif %}
+  </div>
+</section>
+</div>
+
+<div class="col">
+<section class="panel">
+  <h2>This week</h2>
+  {% if week.days_logged %}
+  <div class="stat-band">
+    <div class="stat"><div class="n">{{ '%.0f' % week.averages.calories }}<small> kcal</small></div><div class="l">Avg · logged days</div></div>
+    <div class="stat"><div class="n">{{ '%.0f' % week.averages.protein }}<small> g</small></div><div class="l">Avg protein</div></div>
+    <div class="stat"><div class="n">{{ week.days_logged }}<small> /7</small></div><div class="l">Days logged</div></div>
+  </div>
+  <div class="factors" style="margin-top:14px">
+    {% for d in week.series %}
+    {% set ratio = (d.calories / snap.targets.calories * 100) if snap.targets.calories and d.calories else 0 %}
+    <div class="factor">
+      <span class="k">{{ d.day | dayname }}</span>
+      <span class="v">{{ '%.0f' % d.calories if d.calories else '—' }}</span>
+      <span class="impact">{{ '%.0f' % d.protein if d.protein else '0' }}g protein</span>
+      <span class="track" aria-hidden="true"><i style="width: {{ [ratio, 100] | min }}%"></i></span>
+    </div>
+    {% endfor %}
+  </div>
+  {% if week.top_foods %}
+  <p class="hint" style="margin-top:10px">Most repeated:
+    {% for f in week.top_foods[:3] %}{{ f.name }} ×{{ f.count }}{{ ', ' if not loop.last }}{% endfor %}.</p>
+  {% endif %}
+  {% else %}
+  {{ ui.empty_state('The weekly picture starts with one logged day.',
+      'Consistency of logging matters more than precision — rough entries beat no entries.') }}
+  {% endif %}
+</section>
+
+{% if recent %}
+<section class="panel">
+  <h2>Recent</h2>
+  <div class="search-results">
+    {% for food in recent %}
+    <form method="post" action="/nutrition/log" style="display:contents">
+      <input type="hidden" name="name" value="{{ food.name }}">
+      <input type="hidden" name="food_id" value="{{ food.id }}">
+      <input type="hidden" name="source" value="repeat">
+      <input type="hidden" name="day" value="{{ view_day.isoformat() }}">
+      <button type="submit" class="food-hit">
+        <span class="fh-name">{{ food.name }}</span>
+        <span class="fh-brand">{{ food.brand or food.source_provider }} · tap to log 1 serving</span>
+        <span class="fh-cal">{% if food.calories_100g is not none %}{{ '%.0f' % food.calories_100g }} kcal/100g{% else %}—{% endif %}</span>
+      </button>
+    </form>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if templates %}
+<section class="panel">
+  <h2>Saved meals</h2>
+  <div class="search-results">
+    {% for t in templates %}
+    <form method="post" action="/nutrition/templates/{{ t.id }}/apply" style="display:contents">
+      <button type="submit" class="food-hit">
+        <span class="fh-name">{{ t.name }}</span>
+        <span class="fh-brand">{{ t['items'] | length }} item{{ 's' if t['items'] | length != 1 }} · tap to log</span>
+        <span class="fh-cal">{{ '%.0f' % t.calories }} kcal</span>
+      </button>
+    </form>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Sources</h2>
+  <p class="hint">Priority: your corrections → saved foods → Open Food Facts barcode
+  → UK generic references → manual entry. Every result carries a source and
+  confidence chip; corrections stay local and win future lookups. No accounts,
+  no subscription, no diet-culture scoring.</p>
+</section>
+</div>
+</div>
+{% endblock %}

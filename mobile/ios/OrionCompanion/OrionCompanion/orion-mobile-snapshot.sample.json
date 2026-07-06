@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-29T12:00:00+00:00",
+  "user": {
+    "id": 1,
+    "display_name": "Operator",
+    "email": "operator@example.local"
+  },
+  "overview": {
+    "metrics": [
+      {
+        "label": "Net Worth",
+        "value": "£12,400",
+        "delta": "+2.1%",
+        "trend": "up"
+      },
+      {
+        "label": "Sleep Average",
+        "value": "7.2h",
+        "delta": "",
+        "trend": "flat"
+      },
+      {
+        "label": "Training Load",
+        "value": "61",
+        "delta": "",
+        "trend": "flat"
+      }
+    ],
+    "primary_insight": {
+      "domain": "health",
+      "severity": "info",
+      "title": "Recovery stable",
+      "body": "Sleep and HRV are within the recent baseline.",
+      "created_at": "2026-06-29T12:00:00+00:00"
+    }
+  },
+  "tasks": {
+    "counts": {
+      "open": 2,
+      "done": 5,
+      "total": 7
+    },
+    "open": [
+      {
+        "id": 1,
+        "title": "Export ORION mobile snapshot",
+        "area": "Coding Projects",
+        "priority": "high",
+        "status": "open",
+        "due_date": "2026-06-29"
+      },
+      {
+        "id": 2,
+        "title": "Run iPhone import test",
+        "area": "Coding Projects",
+        "priority": "medium",
+        "status": "open",
+        "due_date": null
+      }
+    ]
+  },
+  "calendar": {
+    "upcoming": [
+      {
+        "id": 1,
+        "title": "Design review",
+        "calendar_name": "Work",
+        "starts_at": "2026-06-29T15:00:00+00:00",
+        "ends_at": "2026-06-29T16:00:00+00:00",
+        "all_day": false
+      }
+    ]
+  },
+  "insights": [
+    {
+      "domain": "productivity",
+      "severity": "positive",
+      "title": "Deep work rising",
+      "body": "Deep work hours are above the recent average.",
+      "created_at": "2026-06-29T12:00:00+00:00"
+    }
+  ],
+  "sources": [
+    {
+      "key": "tasks_sync",
+      "name": "Tasks",
+      "domain": "tasks",
+      "status": "mock",
+      "is_mock": true
+    }
+  ]
+}

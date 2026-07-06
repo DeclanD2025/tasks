@@ -17,9 +17,23 @@ dependencies = [
     "platformdirs>=4.2",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
+    "pdfplumber>=0.11",
+    "pypdf>=6.0",
+    # Two-way task sync with the companion tasks app (Supabase REST).
+    "httpx>=0.27",
+    # Web access layer (app.web): the same local data served as a mobile-first
+    # webapp on the LAN. No hosted backend — uvicorn runs on this machine.
+    "fastapi>=0.111",
+    "uvicorn>=0.30",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
+# iOS/iCloud calendar via the macOS EventKit framework. Optional so the app
+# still installs on non-macOS platforms (the calendar connector degrades to a
+# mock when EventKit is unavailable).
+macos = ["pyobjc-framework-EventKit>=10.0"]
 dev = [
     "pytest>=8.2",
     "ruff>=0.5",
@@ -30,6 +44,7 @@ packaging = [
 
 [project.scripts]
 orion = "app.main:main"
+orion-web = "app.web.server:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}ORION — Start Strength{% endblock %}
+{% block heading %}Start{% endblock %}
+
+{% block statusline %}
+<div class="statusline"><span>Strength launcher</span><span>iPhone ready</span></div>
+{% endblock %}
+
+{% block content %}
+{% if active_workout %}
+<section class="strength-launcher workout-launch-hero">
+  <div>
+    <span class="training-eyebrow">Active session</span>
+    <h2>{{ active_workout.name }}</h2>
+    <p>{{ active_workout.completed_sets }}/{{ active_workout.total_sets }} sets complete. Pick up where you left off.</p>
+  </div>
+  <a class="btn primary fitness-cta" href="/strength/workout/{{ active_workout.id }}">Resume workout</a>
+</section>
+{% endif %}
+
+<section class="strength-launcher workout-start-grid">
+  <article class="workout-blank-card">
+    <span class="training-eyebrow">Workout mode</span>
+    <h2>Start strength</h2>
+    <p>Open a focused session, add movements, track sets, rest, RPE, and last-time context as you train.</p>
+    <form method="post" action="/strength/start" class="blank-workout-form">
+      <label>Workout name
+      <input type="text" name="name" value="Strength Workout" maxlength="160">
+      </label>
+      <button class="primary" type="submit">Start blank workout</button>
+    </form>
+  </article>
+
+  <article class="workout-template-panel">
+    <div class="section-head">
+      <div>
+        <span class="training-eyebrow">Templates</span>
+        <h2>Pick a workout</h2>
+      </div>
+    </div>
+    <div class="template-grid">
+    {% for t in templates %}
+    <a class="template-card" href="/strength/templates/{{ t.id }}">
+      <span class="k">{{ t.exercise_count }} exercises · {{ t.set_count }} sets</span>
+      <b>{{ t.name }}</b>
+      <span>{{ t.muscles | join(' / ') }}</span>
+    </a>
+    {% endfor %}
+    </div>
+  </article>
+</section>
+{% endblock %}

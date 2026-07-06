@@ -18,6 +18,48 @@ rules running locally.
 
 ---
 
+## ORION web — the deployed cockpit
+
+`app/web` serves the same database as a **PWA life cockpit** (this is what runs
+on Fly.io; see `docs/DEPLOY.md`). It is the primary day-to-day surface:
+
+- **Today** — time-aware command centre: readiness, sleep debt, calendar strip,
+  primary action, mission plan, domain cards (Body / Training / Mind / Fuel).
+- **Train** — plan workbench, weekly running target (adaptive, ±10% guardrail,
+  overridable in Settings), full strength cockpit (sets/reps/RPE, templates,
+  PRs, analytics).
+- **Health** — body telemetry with tap-to-drill drawers on every metric:
+  7/30/90-day trends, baselines, what-it-means, how-it's-calculated, caveats.
+  Transparent readiness formula and a personal-need sleep-debt model.
+- **Fuel** — zero-subscription nutrition: barcode scan (native
+  BarcodeDetector + manual fallback), Open Food Facts + UK generic references +
+  local corrections, quick add, water, meal timeline, saved meals,
+  deterministic daily/weekly insights.
+- **Route Atlas** — GPS runs mapped on dark Leaflet/OSM tiles, named routes,
+  attempts, PBs, pace trends, match suggestions with confidence, GPX in/out.
+- **Mind** — morning brief / evening debrief with labelled scales, CBT thought
+  check, Stoic practice mapped to virtues, breathing-orb meditation timer,
+  mood/stress trend drilldowns.
+- **Calendar** — week orbit with transparent load scores, free-evening flags,
+  manual events, UK public holidays (Nager.Date).
+- **Money** — monthly position, accounts, transactions, ECB currency context
+  (Frankfurter).
+- **Data Vault** — imports (HAE JSON / GPX / CSV with row-level reporting),
+  full JSON + per-table CSV + GPX export, external-signal status board, and
+  `POST /api/ingest/hae` so the Health Auto Export app can push exports
+  straight to the server (`ORION_INGEST_TOKEN`).
+- **Settings** — targets, location for weather, theme intensity, adapters.
+
+External signals (Open-Meteo weather/air, Nager.Date, Frankfurter,
+Open Food Facts) are **free and keyless**, cached server-side, ambient-only,
+and degrade to a quiet stale/unavailable state — they never gate core features.
+
+```bash
+uv run orion-web         # http://127.0.0.1:8321 — passphrase "orion" in dev
+```
+
+---
+
 ## Screens
 
 - **Login / unlock** — cinematic star-field with the Orion constellation subtly
@@ -57,6 +99,36 @@ Run the tests:
 ```bash
 uv run pytest
 ```
+
+---
+
+## Web access (phone / browser)
+
+The personal OS is also served as a **mobile-first webapp** over the same
+local database — no hosted backend, no new data path. It renders the same
+deterministic read models (`app/domains/personal_os.py`) the desktop app uses:
+Today, Training, Run Plan, Recovery, Money, Mind and Data, including workout
+logging, mind check-ins and mindfulness logging from the phone.
+
+```bash
+uv run orion-web                          # this Mac only: http://127.0.0.1:8321
+ORION_WEB_HOST=0.0.0.0 uv run orion-web   # reachable from your phone on the LAN
+```
+
+Or double-click **`~/start-orion-web.command`**, which binds to the LAN and
+prints the exact URL to open on your phone (add it to the iPhone home screen
+via Share → Add to Home Screen for an app-like feel).
+
+Access is gated by the same unlock passphrase as the desktop login
+(`ORION_UNLOCK_PASSPHRASE`); sessions are signed cookies backed by a
+per-install secret in the app-data directory (or `ORION_WEB_SECRET`). Do not
+port-forward it raw to the public internet.
+
+To reach it away from home, see [`docs/DEPLOY.md`](docs/DEPLOY.md): the
+recommended path is Tailscale (data stays on your Mac), and the repo also
+ships a production `Dockerfile` for container hosts (Fly.io / Railway /
+Render) with a persistent volume. Static hosts like Netlify cannot run a
+stateful Python server — the doc explains the equivalents that can.
 
 ---
 
@@ -136,6 +208,13 @@ increased compared to last week"*. Adding an insight = adding a small pure
 function to `RULES`. A test (`tests/test_analytics.py`) guards that no hosted-LLM
 client is ever imported here.
 
+The Tasks **Command Inbox** follows the same rule: messy brain dumps are parsed
+locally by [`app/domains/productivity/inbox_parser.py`](app/domains/productivity/inbox_parser.py)
+using text splitting, keyword matching, date phrase detection, priority scoring,
+and area/category inference. It deliberately has no OpenAI, Anthropic,
+server-side LLM, paid parsing API, or external inference dependency; suggestions
+must be reviewed in the UI before they are saved.
+
 ### Background jobs
 
 [`app/jobs/scheduler.py`](app/jobs/scheduler.py) runs APScheduler on a background
@@ -153,7 +232,7 @@ self-contained, replaceable package under `app/integrations/`:
 
 | Connector | Domain | Real-data plan |
 |-----------|--------|----------------|
-| Open Banking / GoCardless | finance | OAuth + consent; **never store bank logins** |
+| Starling Bank | finance | Personal Access Token from OS keychain; **never store bank logins** |
 | Trading 212 | finance | REST API + key from OS keychain |
 | Coinbase | finance | API key/secret or OAuth |
 | Moneybox | finance | export / supported endpoint |

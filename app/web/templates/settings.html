@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}ORION — Settings{% endblock %}
+{% block heading %}Settings{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  <span>targets · location · appearance</span>
+  <span>blank resets to default</span>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if saved %}{{ ui.toast('Settings saved.') }}{% endif %}
+
+<form method="post" action="/settings" class="panel" style="display:block">
+  {% for group, specs in groups.items() %}
+  <div class="settings-group">
+    <h2>{{ group_labels.get(group, group | title) }}</h2>
+    {% for spec in specs %}
+    <div class="setting-row">
+      <span class="st-label">{{ spec.label }}{% if spec.unit %} <small style="color:var(--text-3)">({{ spec.unit }})</small>{% endif %}</span>
+      {% if spec.kind == 'number' %}
+      <input type="number" name="{{ spec.key }}" step="any"
+             {% if spec.min is not none %}min="{{ spec.min }}"{% endif %}
+             {% if spec.max is not none %}max="{{ spec.max }}"{% endif %}
+             value="{{ values[spec.key] if values[spec.key] is not none else '' }}"
+             placeholder="{{ spec.default if spec.default is not none else 'adaptive' }}">
+      {% elif spec.kind == 'choice' %}
+      <select name="{{ spec.key }}">
+        {% for choice in spec.choices %}
+        <option value="{{ choice }}" {{ 'selected' if values[spec.key] == choice }}>{{ choice | title }}</option>
+        {% endfor %}
+      </select>
+      {% elif spec.kind == 'bool' %}
+      <select name="{{ spec.key }}">
+        <option value="1" {{ 'selected' if values[spec.key] }}>On</option>
+        <option value="" {{ 'selected' if not values[spec.key] }}>Off</option>
+      </select>
+      {% else %}
+      <input type="text" name="{{ spec.key }}"
+             value="{{ values[spec.key] if values[spec.key] is not none else '' }}"
+             placeholder="{{ spec.default or '' }}">
+      {% endif %}
+      {% if spec.help %}<span class="st-help">{{ spec.help }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  <div class="settings-save">
+    <button type="submit" class="primary">Save settings</button>
+  </div>
+</form>
+
+<section class="panel">
+  <h2>Privacy & data</h2>
+  <p class="hint">Everything lives in your own SQLite database — no analytics, no
+  third-party accounts. External signals (weather, air, holidays, currency,
+  Open Food Facts) are free keyless APIs proxied through your server; they receive
+  coordinates or a search term, never your data. Full export lives in the
+  <a href="/data">Data Vault</a>.</p>
+</section>
+{% endblock %}

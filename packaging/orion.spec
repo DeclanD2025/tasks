@@ -13,7 +13,7 @@
 
 # -*- mode: python ; coding: utf-8 -*-
 import os
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 # Resolve the project root from the spec location so the build works no matter
 # which directory PyInstaller is invoked from.
@@ -31,11 +31,24 @@ hidden = (
     + ["pyqtgraph"]
 )
 
+# pyobjc framework bindings for the Apple Calendar (EventKit) integration.
+# Without these the frozen app cannot ``import EventKit`` — calendar access is
+# silently unavailable and falls back to mock events. pyobjc frameworks ship
+# bridgesupport *data* files that the lazy loader needs, so collect_all (not
+# just submodules) is required. Foundation/CoreFoundation back NSDate usage.
+pyobjc_datas = []
+pyobjc_binaries = []
+for _framework in ("EventKit", "Foundation", "CoreFoundation", "objc"):
+    _d, _b, _h = collect_all(_framework)
+    pyobjc_datas += _d
+    pyobjc_binaries += _b
+    hidden += _h
+
 a = Analysis(
     [ENTRY],
     pathex=[ROOT],
-    binaries=[],
-    datas=DATAS,
+    binaries=pyobjc_binaries,
+    datas=DATAS + pyobjc_datas,
     hiddenimports=hidden,
     hookspath=[],
     runtime_hooks=[],
@@ -60,6 +73,21 @@ app = BUNDLE(
     coll,
     name="ORION.app",
     icon=ICON,
-    bundle_identifier="local.orion.app",
-    info_plist={"NSHighResolutionCapable": True, "LSMinimumSystemVersion": "11.0"},
+    bundle_identifier="com.declandundas.orion.mac",
+    info_plist={
+        "NSHighResolutionCapable": True,
+        "LSMinimumSystemVersion": "11.0",
+        # Required for macOS to show the calendar-access prompt (TCC). Without
+        # these, EventKit access is silently denied and no dialog appears.
+        # NSCalendarsUsageDescription covers macOS <= 13; the FullAccess key is
+        # the macOS 14+ (Sonoma) replacement — we ship both for compatibility.
+        "NSCalendarsUsageDescription": (
+            "ORION reads your iCloud calendar to show your schedule alongside "
+            "your other life data. It never edits or shares your calendar."
+        ),
+        "NSCalendarsFullAccessUsageDescription": (
+            "ORION reads your iCloud calendar to show your schedule alongside "
+            "your other life data. It never edits or shares your calendar."
+        ),
+    },
 )

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}ORION — {{ tpl.name }}{% endblock %}
+{% block heading %}Template{% endblock %}
+{% block statusline %}
+<div class="statusline"><span>{{ tpl.exercise_count }} exercises</span><span>{{ tpl.set_count }} sets</span><span>Device iPhone</span></div>
+{% endblock %}
+{% block content %}
+<section class="panel hero">
+  <h2>{{ tpl.name }}</h2>
+  <div class="strength-command">
+    <div><span class="k">Preview</span><h1>{{ tpl.name }}</h1><p>{{ tpl.muscles | join(' / ') }}</p></div>
+    <form method="post" action="/strength/start">
+      <input type="hidden" name="template_id" value="{{ tpl.id }}">
+      <button class="primary" type="submit">Start</button>
+    </form>
+  </div>
+  <div class="btnrow" style="margin-top:12px"><button class="ghost" type="button" disabled>Edit coming soon</button></div>
+</section>
+<section class="panel">
+  <h2>Exercise list</h2>
+  <div class="exercise-list">
+    {% for ex in tpl.exercises %}
+    <a class="exercise-pick" href="/strength/exercises/{{ ex.id }}">
+      <span class="glyph">{{ ex.glyph }}</span>
+      <span><b>{{ ex.name }}</b><small>{{ ex.equipment }} · {{ ex.primary }}</small></span>
+      <em>{{ ex.target_sets }} x {{ ex.target_reps }}</em>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

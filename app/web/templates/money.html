@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}ORION — Money{% endblock %}
+{% block heading %}Money{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  <span>{{ today_date.strftime('%B') }}</span>
+  <span>buffer {{ snap.remaining_buffer | money }}</span>
+  <span>safe {{ snap.safe_to_spend | money }}/day</span>
+  {% if snap.warnings %}<span class="alert">{{ snap.warnings | length }} watch item{{ 's' if snap.warnings | length != 1 }}</span>
+  {% else %}<span class="ok">steady</span>{% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="panel hero">
+  <h2>Monthly position</h2>
+  <div class="stat-band">
+    <div class="stat"><div class="n">{{ snap.monthly_income | money }}</div><div class="l">Income</div></div>
+    <div class="stat"><div class="n">{{ snap.remaining_buffer | money }}</div><div class="l">Buffer left</div></div>
+    <div class="stat"><div class="n">{{ snap.safe_to_spend | money }}<small>/day</small></div><div class="l">Safe to spend</div></div>
+  </div>
+  {% if snap.warnings %}
+  <div class="queue" style="margin-top:12px">
+    {% for w in snap.warnings %}
+    <div class="finding"><div class="head"><b>{{ w }}</b> {{ ui.severity_pill('warning') }}</div></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>This week</h2>
+  <div class="stat-band">
+    <div class="stat"><div class="n">{{ snap.weekly_spend | money }}</div><div class="l">Spent</div></div>
+    <div class="stat">
+      <div class="n">{{ snap.weekly_pace_delta | abs | money }}</div>
+      <div class="l">{{ 'ahead of pace' if snap.weekly_pace_delta > 0 else 'under pace' }}</div>
+    </div>
+    <div class="stat"><div class="n">{{ snap.discretionary_spend | money }}</div><div class="l">Flexible · month</div></div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Month so far</h2>
+  <div class="factors">
+    {% set total = snap.fixed_costs + snap.subscriptions + snap.debt_repayments + snap.savings + snap.discretionary_spend %}
+    {% for label, amount in [
+        ('Fixed', snap.fixed_costs), ('Subs', snap.subscriptions),
+        ('Debt', snap.debt_repayments), ('Savings', snap.savings),
+        ('Flexible', snap.discretionary_spend)] %}
+    <div class="factor">
+      <span class="k">{{ label }}</span>
+      <span class="v">{{ amount | money }}</span>
+      <span class="impact">{{ '%.0f' % (amount / total * 100) if total else 0 }}% of outgoings</span>
+      <span class="track" aria-hidden="true"><i style="width: {{ '%.0f' % (amount / total * 100) if total else 0 }}%"></i></span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Upcoming · 14 days</h2>
+  {% if snap.upcoming_bills %}
+  <ul class="clean">{% for bill in snap.upcoming_bills %}<li>{{ bill }}</li>{% endfor %}</ul>
+  {% else %}
+  <p class="hint">No recurring charges detected in the next fortnight.</p>
+  {% endif %}
+</section>
+
+{% if accounts %}
+<details class="more">
+  <summary><span class="h">Accounts</span><span class="n">{{ accounts | length }}</span></summary>
+  <div class="rows">
+    {% for acct in accounts %}
+    <div class="row">
+      <span class="k">{{ acct.kind }}</span>
+      <span class="v"><b>{{ acct.name }}</b> <span class="d">{{ acct.value | money }} · as of {{ acct.snapshot_date.strftime('%d %b') }}</span></span>
+    </div>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
+
+<section class="panel">
+  <h2>Currency context</h2>
+  {% if fx.ok and fx.payload.rates %}
+  <div class="grid" style="grid-template-columns: 1fr 1fr; align-items:end">
+    <label class="f">Amount ({{ home_currency }})
+      <input type="number" value="100" min="0" step="any" inputmode="decimal"
+             data-fx-amount data-fx-rates='{{ fx.payload.rates | tojson }}'>
+    </label>
+    <label class="f">Into
+      <select data-fx-currency>
+        {% for code in fx.payload.rates.keys() %}
+        <option value="{{ code }}" {{ 'selected' if code == 'EUR' }}>{{ code }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <p class="hint" style="font-size:16px; margin-top:10px"><b data-fx-result>{{ '%.2f' % (fx.payload.rates.get('EUR', 0) * 100) }} EUR</b></p>
+  <p class="note">ECB reference rates via Frankfurter (free, keyless){% if fx.stale %} —
+  serving the last good copy{% endif %} · fetched {{ fx.age_label }}. Travel context,
+  not trading data.</p>
+  {% else %}
+  <p class="hint">Exchange-rate signal unavailable right now. It returns quietly when
+  the network does — nothing else on this page depends on it.</p>
+  {% endif %}
+</section>
+
+<details class="more">
+  <summary><span class="h">Recent transactions</span><span class="n">last {{ transactions | length }}</span></summary>
+  {% if transactions %}
+  <div class="txlist">
+    {% for tx in transactions %}
+    <div class="tx">
+      <span class="who">{{ tx.description or tx.category }}<br><span class="cat">{{ tx.booked_at.strftime('%d %b') }} · {{ tx.category }}</span></span>
+      <span class="amt {{ 'pos' if tx.amount > 0 else 'neg' }}">{{ tx.amount | money }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="hint">No transactions this period — import a statement or add manual entries in the desktop app.</p>
+  {% endif %}
+</details>
+{% endblock %}

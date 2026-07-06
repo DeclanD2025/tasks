@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}ORION — Data Vault{% endblock %}
+{% block heading %}Data Vault{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  <span>{% if snap.last_import %}imported {{ snap.last_import.strftime('%d %b %H:%M') }}{% else %}never imported{% endif %}</span>
+  <span>{{ snap.imported_files }} files</span>
+  <span>{{ snap.workout_count }} workouts</span>
+  {% set missing = snap.metrics | selectattr('status', 'equalto', 'missing') | list | length %}
+  {% if missing %}<span class="alert">{{ missing }} metrics missing</span>{% else %}<span class="ok">full coverage</span>{% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+{% if import_report %}
+<div class="toast {{ '' if import_report.ok else 'warning' }}" role="status">
+  {% if import_report.ok %}
+    {% if import_report.kind == 'gpx' %}Route imported ({{ import_report.points }} points, {{ '%.1f' % (import_report.distance_meters / 1000) }} km).
+    {% else %}Imported: {{ import_report.days or 0 }} day{{ 's' if import_report.days != 1 }}{% if import_report.workouts %}, {{ import_report.workouts }} workout{{ 's' if import_report.workouts != 1 }}{% endif %}{% if import_report.rejected %} · {{ import_report.rejected }} rejected{% endif %}.
+    {% endif %}
+  {% else %}Import failed: {{ import_report.error }}{% endif %}
+</div>
+{% endif %}
+
+<div class="cols">
+<div class="col">
+<section class="panel">
+  <h2>Import</h2>
+  <form method="post" action="/data/import" enctype="multipart/form-data" class="import-zone">
+    <input type="file" name="file" accept=".json,.gpx,.csv" required>
+    <button type="submit" class="ghost">Import file</button>
+    <p class="hint">Accepted: Health Auto Export <b>.json</b> (metrics, workouts and
+    GPS routes), <b>.gpx</b> tracks (become routes), and <b>.csv</b> with a
+    <code>day</code> column plus any of sleep_minutes / hrv_ms / resting_hr /
+    weight_kg. Rows that don't parse are counted and reported, never silently
+    dropped.</p>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Auto-push from your phone</h2>
+  {% if ingest_configured %}
+  <p class="hint">Push ingest is <b style="color:var(--good)">enabled</b>. In Health
+  Auto Export, create a REST API automation pointed at
+  <code>/api/ingest/hae</code> with header
+  <code>Authorization: Bearer &lt;your token&gt;</code> — exports then land here on
+  a schedule with no Mac in the loop.</p>
+  {% else %}
+  <p class="hint">Set the <code>ORION_INGEST_TOKEN</code> environment variable
+  (e.g. <code>fly secrets set ORION_INGEST_TOKEN=…</code>) to enable
+  <code>POST /api/ingest/hae</code>. The Health Auto Export app can then push its
+  exports directly to this server on a schedule — telemetry stays fresh without
+  manual uploads.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Coverage</h2>
+  <div class="factors">
+    {% set max_count = snap.metrics | map(attribute='count') | max %}
+    {% for m in snap.metrics %}
+    <div class="factor {{ 'absent' if m.status == 'missing' else '' }}">
+      <span class="k">{{ m.metric }}</span>
+      <span class="v">{% if m.status == 'available' %}{{ m.count }} days{% else %}missing{% endif %}</span>
+      <span class="impact">{% if m.latest %}to {{ m.latest.strftime('%d %b') }}{% else %}{{ m.use }}{% endif %}</span>
+      <span class="track" aria-hidden="true"><i style="width: {{ '%.0f' % (m.count / max_count * 100) if max_count else 0 }}%"></i></span>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="note" style="margin-top:10px">Bars compare days of coverage per metric.
+  Missing metrics list what they would power.</p>
+</section>
+
+<section class="panel">
+  <h2>What to export next</h2>
+  {% if snap.suggestions %}
+  <ul class="clean">{% for s in snap.suggestions %}<li>{{ s }}</li>{% endfor %}</ul>
+  {% else %}
+  <p class="hint">All the metrics ORION knows how to use are flowing. Nothing to add.</p>
+  {% endif %}
+</section>
+</div>
+
+<div class="col">
+<section class="panel">
+  <h2>Export — nothing trapped</h2>
+  <div class="btnrow compact" style="margin-bottom:12px">
+    <a class="btn primary" href="/data/export.json">Everything · JSON</a>
+  </div>
+  <div class="vault-grid">
+    {% for name, count in table_counts.items() %}
+    <div class="vault-row">
+      <span class="vr-name">{{ name | replace('_', ' ') }}</span>
+      <span class="vr-count">{{ count }}</span>
+      <a href="/data/export/{{ name }}.csv">CSV</a>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="hint" style="margin-top:10px">Routes and workout traces also export as
+  GPX from the <a href="/routes">Route Atlas</a>.</p>
+</section>
+
+<section class="panel">
+  <h2>External signals</h2>
+  {% if signals %}
+  {% for s in signals %}
+  <div class="signal-row">
+    <span class="sr-kind">{{ s.kind }}</span>
+    <span class="sr-state">
+      <span class="signal-dot {{ 'ok' if s.ok and s.fresh else 'stale' if s.ok else 'err' }}"></span>
+      {{ 'fresh' if s.fresh else 'stale — serving last good copy' if s.ok else s.error | truncate(60) }}
+    </span>
+    <span class="sr-state">{{ s.fetched_at.strftime('%d %b %H:%M') if s.fetched_at else '' }}</span>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="hint">No signal fetched yet this session. Weather, air quality, holidays
+  and FX populate here on first use — all free, keyless, cached, and served stale
+  rather than broken when upstream is down.</p>
+  {% endif %}
+</section>
+
+<details class="more">
+  <summary><span class="h">Sources</span><span class="n">{{ snap.sources | length }}</span></summary>
+  <ul class="clean">{% for line in snap.sources %}<li>{{ line }}</li>{% endfor %}</ul>
+</details>
+
+<details class="more">
+  <summary><span class="h">Parser notes</span><span class="n">{{ snap.parsing_notes | length }}</span></summary>
+  <ul class="clean">{% for note in snap.parsing_notes %}<li>{{ note }}</li>{% endfor %}</ul>
+</details>
+
+<form method="post" action="/logout" style="margin-top:18px">
+  <button type="submit" class="ghost">Lock session</button>
+</form>
+</div>
+</div>
+{% endblock %}

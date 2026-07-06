@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}ORION — Strength History{% endblock %}
+{% block heading %}History{% endblock %}
+{% block content %}
+<section class="panel hero">
+  <h2>Workout history</h2>
+  <div class="directive-primary"><span class="tag">Archive</span>Completed sessions with volume, main lifts, and muscle groups.</div>
+</section>
+<section class="panel">
+  <h2>Completed workouts</h2>
+  {% if workouts %}
+  <div class="history-list">
+    {% for w in workouts %}
+    <a class="history-card" href="/strength/workout/{{ w.id }}">
+      <span class="date">{{ w.date_label }}</span>
+      <b>{{ w.name }}</b>
+      <span>{{ w.duration }}m · {{ w.exercise_count }} exercises · {{ w.sets }} sets · {{ '%.0f' % w.volume }}kg</span>
+      <em>{{ w.muscles | join(' / ') }}</em>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="hint">No completed workouts yet. Finish a session and it will appear here.</p>
+  {% endif %}
+</section>
+{% endblock %}

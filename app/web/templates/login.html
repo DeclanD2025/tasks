@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}ORION — Unlock{% endblock %}
+{% block content %}
+<div class="starfield" aria-hidden="true">
+  <svg viewBox="0 0 400 700" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <!-- field -->
+    <g>
+      <circle class="star tw"  cx="38"  cy="64"  r="0.9"/>
+      <circle class="star"     cx="86"  cy="132" r="0.6"/>
+      <circle class="star tw2" cx="341" cy="52"  r="1.1"/>
+      <circle class="star"     cx="372" cy="141" r="0.7"/>
+      <circle class="star tw3" cx="52"  cy="246" r="0.8"/>
+      <circle class="star"     cx="24"  cy="382" r="0.6"/>
+      <circle class="star tw"  cx="368" cy="322" r="0.9"/>
+      <circle class="star"     cx="330" cy="404" r="0.6"/>
+      <circle class="star tw2" cx="66"  cy="536" r="1"/>
+      <circle class="star"     cx="118" cy="614" r="0.7"/>
+      <circle class="star tw3" cx="306" cy="586" r="0.9"/>
+      <circle class="star"     cx="356" cy="654" r="0.6"/>
+      <circle class="star tw"  cx="204" cy="38"  r="0.8"/>
+      <circle class="star"     cx="258" cy="620" r="0.7"/>
+      <circle class="star tw2" cx="146" cy="60"  r="0.6"/>
+      <circle class="star"     cx="30"  cy="470" r="0.7"/>
+      <circle class="star tw3" cx="388" cy="228" r="0.7"/>
+      <circle class="star"     cx="104" cy="330" r="0.5"/>
+      <circle class="star tw"  cx="300" cy="240" r="0.6"/>
+      <circle class="star"     cx="342" cy="500" r="0.8"/>
+    </g>
+    <g transform="translate(0,-46)">
+    <!-- the figure -->
+    <g class="line">
+      <line x1="210" y1="92"  x2="152" y2="152"/>
+      <line x1="210" y1="92"  x2="262" y2="166"/>
+      <line x1="152" y1="152" x2="177" y2="333"/>
+      <line x1="262" y1="166" x2="233" y2="295"/>
+      <line x1="233" y1="295" x2="205" y2="314"/>
+      <line x1="205" y1="314" x2="177" y2="333"/>
+      <line x1="177" y1="333" x2="162" y2="468"/>
+      <line x1="233" y1="295" x2="278" y2="450"/>
+      <line x1="205" y1="314" x2="199" y2="382"/>
+    </g>
+    <!-- outer stars -->
+    <circle class="named tw2" cx="210" cy="92"  r="1.5"/>
+    <circle class="named tw"  cx="152" cy="152" r="2.4"/>
+    <circle class="named"     cx="262" cy="166" r="2"/>
+    <circle class="named tw3" cx="162" cy="468" r="1.8"/>
+    <circle class="named tw2" cx="278" cy="450" r="2.6"/>
+    <!-- the sword -->
+    <circle class="star"     cx="199" cy="362" r="0.9"/>
+    <circle class="star tw3" cx="199" cy="382" r="1.1"/>
+    <circle class="star"     cx="198" cy="401" r="0.8"/>
+    <!-- the belt -->
+    <circle class="belt-star tw"  cx="233" cy="295" r="2.6"/>
+    <circle class="belt-star tw2" cx="205" cy="314" r="2.6"/>
+    <circle class="belt-star tw3" cx="177" cy="333" r="2.6"/>
+    <text x="248" y="291">Mintaka</text>
+    <text x="220" y="312">Alnilam</text>
+    <text x="192" y="345">Alnitak</text>
+    <!-- shoulder + foot names, quieter -->
+    <text x="112" y="146">Betelgeuse</text>
+    <text x="272" y="162">Bellatrix</text>
+    <text x="288" y="447">Rigel</text>
+    <text x="126" y="465">Saiph</text>
+    </g>
+  </svg>
+</div>
+<div class="login-shell">
+  <div class="panel login-card">
+    <div class="brand">ORION</div>
+    <div class="sub">Personal command layer</div>
+    <div class="operator">Operator · Declan Dundas</div>
+    <form method="post" action="/login" class="stack">
+      <label class="f" for="passphrase">Unlock passphrase</label>
+      <input type="password" id="passphrase" name="passphrase" autofocus
+             autocomplete="current-password" required>
+      <button type="submit" class="primary">Unlock</button>
+    </form>
+    {% if error %}<div class="err" role="alert">{{ error }}</div>{% endif %}
+    <p class="note" style="margin-top:20px">Alnitak · Alnilam · Mintaka</p>
+  </div>
+</div>
+{% endblock %}

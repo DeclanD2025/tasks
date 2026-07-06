@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}ORION — Calendar{% endblock %}
+{% block heading %}Calendar Orbit{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  <span>week load {{ week_load }}</span>
+  {% set today_row = (this_week | selectattr('is_today') | list)[0] if this_week else None %}
+  {% if today_row %}<span>{{ today_row.load.events }} event{{ 's' if today_row.load.events != 1 }} today</span>
+  <span class="{{ 'ok' if today_row.free_evening else '' }}">{{ 'evening clear' if today_row.free_evening else 'evening booked' }}</span>{% endif %}
+  <span>{{ holidays | length }} holiday{{ 's' if holidays | length != 1 }} · 60d</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="cols">
+<div class="col">
+<section class="panel">
+  <h2>This week</h2>
+  {% for d in this_week %}
+  <div class="cal-day {{ 'today-row' if d.is_today }}">
+    <div class="cd-date">
+      <span class="dw">{{ d.day.strftime('%a') }}{{ ' · today' if d.is_today }}</span>
+      <span class="dn">{{ d.day.strftime('%d') }}</span>
+    </div>
+    <div class="cd-events">
+      {% for e in d.events %}
+      <div class="cd-ev">
+        <span class="t">{{ 'all day' if e.all_day else e.starts_at.strftime('%H:%M') }}</span>
+        <span class="n">{{ e.title }}</span>
+        {% if e.calendar_name and e.calendar_name != 'ORION' %}<span class="c">{{ e.calendar_name }}</span>{% endif %}
+        {% if e.ext_id and e.ext_id.startswith('orion-manual-') %}
+        <form method="post" action="/calendar/event/{{ e.id }}/delete">
+          <button type="submit" class="mi-del" aria-label="Delete {{ e.title }}">✕</button>
+        </form>
+        {% endif %}
+      </div>
+      {% else %}
+      <span class="cd-free">Clear.{{ ' Training or focus window.' if not d.is_today or d.free_evening else '' }}</span>
+      {% endfor %}
+    </div>
+    <span class="load-chip {{ d.load.band }}">{{ d.load.band }}</span>
+  </div>
+  {% endfor %}
+  <p class="hint" style="margin-top:10px">Load = scheduled hours + a nudge for
+  fragmentation (over three timed events). It flags heavy days; it doesn't judge them.</p>
+</section>
+
+<details class="more">
+  <summary><span class="h">Next week</span><span class="n">{{ next_week | selectattr('events') | list | length }} days with events</span></summary>
+  {% for d in next_week %}
+  <div class="cal-day">
+    <div class="cd-date">
+      <span class="dw">{{ d.day.strftime('%a') }}</span>
+      <span class="dn">{{ d.day.strftime('%d') }}</span>
+    </div>
+    <div class="cd-events">
+      {% for e in d.events %}
+      <div class="cd-ev">
+        <span class="t">{{ 'all day' if e.all_day else e.starts_at.strftime('%H:%M') }}</span>
+        <span class="n">{{ e.title }}</span>
+      </div>
+      {% else %}
+      <span class="cd-free">Clear.</span>
+      {% endfor %}
+    </div>
+    <span class="load-chip {{ d.load.band }}">{{ d.load.band }}</span>
+  </div>
+  {% endfor %}
+</details>
+</div>
+
+<div class="col">
+<section class="panel">
+  <h2>Add event</h2>
+  <form method="post" action="/calendar/event" class="stack">
+    <label class="f">Title
+      <input type="text" name="title" maxlength="200" required placeholder="What's happening">
+    </label>
+    <div class="grid" style="grid-template-columns: 1fr 1fr 1fr;">
+      <label class="f">Day
+        <input type="date" name="day" value="{{ now.date().isoformat() }}">
+      </label>
+      <label class="f">Start
+        <input type="time" name="start_time">
+      </label>
+      <label class="f">End
+        <input type="time" name="end_time">
+      </label>
+    </div>
+    <div class="grid" style="grid-template-columns: 1fr auto;">
+      <label class="f">Location
+        <input type="text" name="location" maxlength="200">
+      </label>
+      <label class="check" style="align-self:end"><input type="checkbox" name="all_day" value="1"> All day</label>
+    </div>
+    <button type="submit" class="primary">Add to orbit</button>
+  </form>
+  <p class="hint" style="margin-top:8px">Synced events (from your calendars) are
+  read-only here; manual ORION events can be deleted.</p>
+</section>
+
+<section class="panel">
+  <h2>Public holidays</h2>
+  {% if holidays %}
+  {% for h in holidays %}
+  <div class="holiday-row">
+    <span class="hd">{{ h.date.strftime('%d %b') }}</span>
+    <span>{{ h.name }}</span>
+  </div>
+  {% endfor %}
+  {% elif not holidays_ok %}
+  <p class="hint">Holiday signal unavailable right now (Nager.Date). It returns
+  quietly when the network does.</p>
+  {% else %}
+  <p class="hint">No public holidays in the next 60 days.</p>
+  {% endif %}
+</section>
+</div>
+</div>
+{% endblock %}

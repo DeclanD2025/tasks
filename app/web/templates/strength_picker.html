@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}ORION — Exercise Picker{% endblock %}
+{% block heading %}Exercises{% endblock %}
+{% block content %}
+<section class="panel hero">
+  <h2>Add exercise</h2>
+  <div class="directive-primary"><span class="tag">{{ workout.name }}</span>Search, filter, or create a custom movement.</div>
+</section>
+
+<section class="panel">
+  <h2>Search</h2>
+  <form method="get" class="stack">
+    <label class="f">Search
+      <input type="text" name="q" value="{{ picker.q }}" placeholder="Bench, row, curl...">
+    </label>
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <label class="f">Muscle
+        <select name="muscle">
+          <option value="">All</option>
+          {% for m in picker.muscles %}<option value="{{ m }}" {{ 'selected' if picker.muscle == m }}>{{ m }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="f">Equipment
+        <select name="equipment">
+          <option value="">All</option>
+          {% for e in picker.equipment %}<option value="{{ e }}" {{ 'selected' if picker.selected_equipment == e }}>{{ e }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    <label class="check"><input type="checkbox" name="favorites" value="1" {{ 'checked' if picker.favorites }}> Favourites only</label>
+    <button class="ghost" type="submit">Filter</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Exercise database</h2>
+  <div class="exercise-list">
+    {% for ex in picker.exercises %}
+    <form method="post" action="/strength/workout/{{ workout.id }}/exercises" class="exercise-pick">
+      <input type="hidden" name="exercise_id" value="{{ ex.id }}">
+      <span class="glyph">{{ ex.glyph }}</span>
+      <span><b>{{ ex.name }}</b><small>{{ ex.equipment }} · {{ ex.primary }}{% if ex.recent %} · recent{% endif %}{% if ex.template %} · template{% endif %}</small></span>
+      <button type="submit">Add</button>
+    </form>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Custom exercise</h2>
+  <form method="post" action="/strength/workout/{{ workout.id }}/custom-exercise" class="stack">
+    <label class="f">Name<input type="text" name="name" maxlength="160" placeholder="My custom lift"></label>
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <label class="f">Muscle<select name="primary_muscle">{% for m in picker.muscles %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select></label>
+      <label class="f">Equipment<select name="equipment">{% for e in picker.equipment %}<option value="{{ e }}">{{ e }}</option>{% endfor %}</select></label>
+    </div>
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <label class="f">Sets<input type="number" name="default_sets" value="3" min="1" max="8"></label>
+      <label class="f">Reps<input type="number" name="default_reps" value="8" min="1" max="50"></label>
+    </div>
+    <button class="primary" type="submit">Create and add</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}ORION — Stoic{% endblock %}
+{% block heading %}Stoic{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  {% if snap.eudaimonia_index is not none %}<span>EUD {{ '%.0f' % snap.eudaimonia_index }}/100</span>{% endif %}
+  {% set measured = snap.virtues | selectattr('has_data') | list | length %}
+  <span>{{ measured }}/4 virtues measured</span>
+  {% if snap.control.has_data %}<span>control {{ '%.0f' % (snap.control.value * 100) }}%</span>{% endif %}
+  <span>week {{ snap.life_weeks_lived }} of {{ snap.life_weeks_total }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+{{ ui.toast(saved_note) }}
+
+<section class="panel hero">
+  <div class="maxim">
+    <blockquote>{{ snap.maxim }}</blockquote>
+    <cite>{{ snap.maxim_author }}</cite>
+  </div>
+  <div class="hero-top" style="margin-top:20px">
+    {{ ui.score_ring(snap.eudaimonia_index, 'Eudaimonia', unit='index') }}
+    <div class="hero-status">
+      <span class="k">Eudaimonia index</span>
+      <h1 style="font-size:24px">{{ 'Flourishing' if snap.eudaimonia_index is not none and snap.eudaimonia_index >= 70 else 'The work continues' if snap.eudaimonia_index is not none else 'Awaiting signal' }}</h1>
+      <div class="estimate">
+        {% if snap.eudaimonia_index is not none %}
+        {{ '%.0f' % (snap.eudaimonia_coverage * 100) }}% backed by real data
+        {% else %}insufficient real data — honestly reported{% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>The four virtues</h2>
+  <div class="virtues">
+    {% for v in snap.virtues %}
+    <div class="virtue">
+      <span class="name">{{ v.name }}</span>
+      <span class="greek">{{ v.greek }}</span>
+      <div class="score">{{ v.display }}{% if v.has_data %}<small> /100</small>{% endif %}</div>
+      <div class="note">{{ v.note }}</div>
+      {% if v.key == 'wisdom' %}
+      <svg class="motif" viewBox="0 0 64 64" aria-hidden="true">
+        <!-- owl of Minerva -->
+        <path d="M14 30 q0 -16 18 -16 q18 0 18 16 q0 22 -18 26 q-18 -4 -18 -26 z"/>
+        <circle cx="24" cy="28" r="6.5"/>
+        <circle cx="40" cy="28" r="6.5"/>
+        <circle cx="24" cy="28" r="1.6"/>
+        <circle cx="40" cy="28" r="1.6"/>
+        <path d="M17 19 l7 4 M47 19 l-7 4"/>
+        <path d="M30 34 l2 4 l2 -4"/>
+        <path d="M22 48 q10 6 20 0"/>
+      </svg>
+      {% elif v.key == 'justice' %}
+      <svg class="motif" viewBox="0 0 64 64" aria-hidden="true">
+        <!-- scales -->
+        <line x1="32" y1="10" x2="32" y2="50"/>
+        <line x1="12" y1="18" x2="52" y2="18"/>
+        <circle cx="32" cy="10" r="2.2"/>
+        <path d="M12 18 l-6 14 h12 z"/>
+        <path d="M6 32 q6 6 12 0"/>
+        <path d="M52 18 l-6 14 h12 z"/>
+        <path d="M46 32 q6 6 12 0"/>
+        <line x1="24" y1="54" x2="40" y2="54"/>
+      </svg>
+      {% elif v.key == 'courage' %}
+      <svg class="motif" viewBox="0 0 64 64" aria-hidden="true">
+        <!-- roman column -->
+        <line x1="14" y1="12" x2="50" y2="12"/>
+        <line x1="17" y1="17" x2="47" y2="17"/>
+        <circle cx="18" cy="14.5" r="2.4"/>
+        <circle cx="46" cy="14.5" r="2.4"/>
+        <line x1="24" y1="20" x2="24" y2="48"/>
+        <line x1="32" y1="20" x2="32" y2="48"/>
+        <line x1="40" y1="20" x2="40" y2="48"/>
+        <line x1="17" y1="51" x2="47" y2="51"/>
+        <line x1="14" y1="56" x2="50" y2="56"/>
+      </svg>
+      {% else %}
+      <svg class="motif" viewBox="0 0 64 64" aria-hidden="true">
+        <!-- amphora -->
+        <path d="M26 12 h12 M28 12 q-1 6 -6 9 q-8 5 -8 15 q0 14 18 16 q18 -2 18 -16 q0 -10 -8 -15 q-5 -3 -6 -9"/>
+        <path d="M20 26 q-7 0 -6 7 q1 5 7 4 M44 26 q7 0 6 7 q-1 5 -7 4"/>
+        <line x1="24" y1="56" x2="40" y2="56"/>
+      </svg>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="note" style="margin-top:10px">Unmeasured virtues say so — nothing here is invented.</p>
+</section>
+
+<section class="panel memento">
+  <h2>Memento mori</h2>
+  {% set pct = (snap.life_weeks_lived / snap.life_weeks_total * 100) if snap.life_weeks_total else 0 %}
+  <div class="rule"><i style="width: {{ '%.1f' % pct }}%"></i></div>
+  <div class="legend">
+    <span>week {{ snap.life_weeks_lived }}</span>
+    <span>{{ snap.life_weeks_total - snap.life_weeks_lived }} remain of {{ snap.life_weeks_total }}</span>
+  </div>
+  <p class="hint">You could leave life right now. Let that determine what you do and say and think.</p>
+</section>
+
+<section class="panel">
+  <h2>Today's practice</h2>
+  <form method="post" action="/stoic/entry" class="stack" data-offline-queue data-offline-label="stoic practice">
+    {% set today_entry = snap.checkins[0] if snap.checkins and snap.checkins[0].day == today_date else None %}
+    <label class="f">Virtue in focus
+      <select name="virtue_focus">
+        {% for v in snap.virtues %}
+        <option value="{{ v.key }}" {{ 'selected' if today_entry and today_entry.virtue_focus == v.key }}>{{ v.name }} · {{ v.greek }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <fieldset style="border:0;padding:0;margin:0">
+      <legend class="f" style="margin-bottom:6px">Effort aimed at what you control</legend>
+      <div class="scale">
+        {% for n in range(10, 101, 10) %}
+        <label>
+          <input type="radio" name="control_pct" value="{{ n }}"
+            {{ 'checked' if (today_entry.control_pct if today_entry else 50) == n }}>{{ n // 10 }}
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <label class="check"><input type="checkbox" name="reflected" value="1"
+      {{ 'checked' if today_entry and today_entry.reflected }}> Reflected deliberately</label>
+    <label class="check"><input type="checkbox" name="served_others" value="1"
+      {{ 'checked' if today_entry and today_entry.served_others }}> Served someone else</label>
+    <label class="check"><input type="checkbox" name="faced_hard_thing" value="1"
+      {{ 'checked' if today_entry and today_entry.faced_hard_thing }}> Faced a hard thing</label>
+    <label class="check"><input type="checkbox" name="restrained_impulse" value="1"
+      {{ 'checked' if today_entry and today_entry.restrained_impulse }}> Restrained an impulse</label>
+    <label class="f">Study minutes
+      <input type="number" name="study_minutes" min="0" max="600" inputmode="numeric"
+             value="{{ today_entry.study_minutes if today_entry else 0 }}">
+    </label>
+    <label class="f">Reflection
+      <textarea name="reflection" maxlength="4000"
+        placeholder="What did the day ask of you, and what did you answer?">{{ today_entry.reflection if today_entry else '' }}</textarea>
+    </label>
+    <button type="submit" class="primary">Log practice</button>
+  </form>
+</section>
+
+{% if snap.practices %}
+<section class="panel">
+  <h2>Practices</h2>
+  <div class="practices">
+    {% for p in snap.practices %}
+    <div class="practice {{ 'done' if p.done }}">
+      <span class="state">{{ '●' if p.done else '○' }}</span>
+      <span class="label">{{ p.label }}</span>
+      <span class="meta">{% if p.streak %}{{ p.streak }}d{% endif %}{% if p.detail %} · {{ p.detail }}{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if snap.reflections %}
+<details class="more" open>
+  <summary><span class="h">Readings of the day</span><span class="n">{{ snap.reflections | length }}</span></summary>
+  <div class="queue">
+    {% for r in snap.reflections %}
+    <div class="finding">
+      <div class="head"><b>{{ r.title }}</b> {{ ui.severity_pill(r.severity) }}</div>
+      <div class="body">{{ r.body }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
+{% endblock %}

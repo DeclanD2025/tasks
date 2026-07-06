@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}ORION — Training{% endblock %}
+{% block heading %}Training{% endblock %}
+
+{% set readiness = recovery.score if recovery.score is not none else none %}
+{% if readiness is not none and readiness < 50 %}
+  {% set recovery_note = 'Recovery is low — keep today easy.' %}
+{% elif readiness is not none and readiness < 65 %}
+  {% set recovery_note = 'Readiness is moderate — stay controlled and leave more in reserve.' %}
+{% elif readiness is not none %}
+  {% set recovery_note = 'Recovery supports the plan — progress without forcing it.' %}
+{% else %}
+  {% set recovery_note = 'Recovery data is sparse — use an easy effort until the signal improves.' %}
+{% endif %}
+
+{% block statusline %}
+<div class="statusline training-statusline" role="status">
+  <span>{{ run.week_distance_km }}/{{ run.weekly_target_km }} km running</span>
+  <span>{{ strength.week_sessions }} strength sessions</span>
+  <span>{{ recovery.label }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="training-today" aria-labelledby="today-training-title">
+  <div class="training-today-copy">
+    <span class="training-eyebrow">Today's Training</span>
+    <h2 id="today-training-title">{{ run.next_run.title }}</h2>
+    <p>{{ recovery_note }} {{ run.next_run.detail }}</p>
+    <div class="training-chips" aria-label="Recommendation context">
+      <span>{{ recovery.label }}{% if readiness is not none %} · {{ '%.0f' % readiness }}/100{% endif %}</span>
+      <span>{{ run.next_run.intensity | title }} intensity</span>
+      <span>{{ run.adherence_label | title }}</span>
+    </div>
+  </div>
+  <div class="training-today-action">
+    <a class="btn primary fitness-cta" href="/run">Start run</a>
+    <a class="btn ghost fitness-cta secondary" href="/strength/start">Start strength workout</a>
+  </div>
+</section>
+
+<section class="training-support" aria-label="Training snapshot">
+  {% set run_ratio = (run.week_distance_km / run.weekly_target_km * 100) if run.weekly_target_km else 0 %}
+  {% set strength_goal = 3 %}
+  {% set strength_ratio = (strength.week_sessions / strength_goal * 100) if strength_goal else 0 %}
+  <article class="fitness-card">
+    <div class="fitness-card-head">
+      <h2>Weekly running</h2>
+      <strong>{{ run.week_distance_km }}<small> / {{ run.weekly_target_km }} km</small></strong>
+    </div>
+    <div class="fitness-progress" role="progressbar" aria-valuenow="{{ '%.0f' % run_ratio }}" aria-valuemin="0" aria-valuemax="100">
+      <i style="width: {{ [run_ratio, 100] | min }}%"></i>
+    </div>
+    <p>{{ (run.weekly_target_km - run.week_distance_km) | round(1) }} km left.
+    The target serves <b>{{ run.goal }}</b>, grown from your recent four weeks —
+    never more than ~10–15% above them.</p>
+    <div class="btnrow compact" style="margin-top:8px">
+      <a class="btn ghost" href="/run">Week plan</a>
+      <a class="btn ghost" href="/routes">Route Atlas</a>
+      <button type="button" class="btn ghost" data-detail="run_distance">Distance trend</button>
+    </div>
+  </article>
+
+  <article class="fitness-card">
+    <div class="fitness-card-head">
+      <h2>Strength consistency</h2>
+      <strong>{{ strength.week_sessions }}<small> / {{ strength_goal }}</small></strong>
+    </div>
+    <div class="strength-dots" aria-label="Strength consistency">
+      {% for n in range(strength_goal) %}
+      <span class="{{ 'done' if n < strength.week_sessions else '' }}"></span>
+      {% endfor %}
+    </div>
+    <p>{% if strength.week_sessions %}{{ strength.last_trained_label }}. Next bias: {{ strength.next_muscle }}.{% else %}No strength logged this week. Start with a simple full-body baseline.{% endif %}</p>
+  </article>
+
+  <article class="fitness-card">
+    <div class="fitness-card-head">
+      <h2>Readiness</h2>
+      <strong>{{ '%.0f' % readiness if readiness is not none else '—' }}<small>{% if readiness is not none %}/100{% endif %}</small></strong>
+    </div>
+    <div class="readiness-meter"><i style="width: {{ readiness if readiness is not none else 18 }}%"></i></div>
+    <p>{{ recovery_note }}</p>
+  </article>
+</section>
+
+<section id="training-plan" class="training-plan panel-lite" aria-labelledby="plan-title">
+  <div class="section-head">
+    <div>
+      <span class="training-eyebrow">{{ plan.week_label }}</span>
+      <h2 id="plan-title">{{ plan.block_name }}</h2>
+    </div>
+    <span class="plan-range">{{ plan.timeline_label }}</span>
+  </div>
+
+  {% set block_progress = plan.progress * 100 %}
+  <div class="block-progress" role="progressbar" aria-valuenow="{{ '%.0f' % block_progress }}" aria-valuemin="0" aria-valuemax="100">
+    <i style="width: {{ '%.0f' % block_progress }}%"></i>
+  </div>
+
+  <div class="plan-workbench">
+    <form method="post" action="/training/plan" class="plan-editor">
+      <label>Block
+        <input type="text" name="block_name" value="{{ plan.block_name }}" maxlength="120">
+      </label>
+      <label>Purpose
+        <input type="text" name="purpose" value="{{ plan.purpose }}" maxlength="120" placeholder="Build base, sharpen speed, return from injury">
+      </label>
+      <label>Focus
+        <select name="focus">
+          {% for key, label in plan_focuses.items() %}
+          <option value="{{ key }}" {{ 'selected' if plan.focus == key }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Start
+        <input type="date" name="start_date" value="{{ plan.start_date.isoformat() }}">
+      </label>
+      <label>Weeks
+        <input type="number" name="weeks" min="1" max="52" value="{{ plan.weeks }}">
+      </label>
+      <label class="span-2">Goal
+        <input type="text" name="goal" value="{{ plan.goal }}" placeholder="The outcome this block is protecting">
+      </label>
+      <button type="submit" class="btn ghost secondary">Update block</button>
+    </form>
+
+    <form method="post" action="/training/plan/session" class="session-composer">
+      <div>
+        <span class="training-eyebrow">Add session</span>
+        <h3>Plan the next training move</h3>
+        <p>Choose the day, stimulus, and intent. ORION will keep the week readable.</p>
+      </div>
+      <label>Day
+        <select name="day">
+          {% for day in plan_days %}
+          <option value="{{ day.isoformat() }}" {{ 'selected' if day == plan_today }}>{{ day.strftime('%a %d %b') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Session
+        <select name="session_type">
+          {% for card in palette %}
+          <option value="{{ card.key }}">{{ card.title }} · {{ card.duration_min }} min · {{ card.intensity }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Label
+        <input type="text" name="label" maxlength="60" placeholder="Long run, push day, easy engine">
+      </label>
+      <label>Notes
+        <input type="text" name="notes" placeholder="Route, target pace, exercises, constraints">
+      </label>
+      <button type="submit" class="btn primary">Add to plan</button>
+    </form>
+  </div>
+
+  <div class="week-plan" aria-label="This week's planned training">
+    {% for day in plan_days %}
+    {% set day_sessions = planned_sessions.get(day, []) %}
+    <article class="day-column {{ 'today' if day == plan_today else '' }}">
+      <div class="day-column-head">
+        <span>{{ day.strftime('%a') }}</span>
+        <strong>{{ day.strftime('%d') }}</strong>
+      </div>
+      <div class="day-sessions">
+        {% for item in day_sessions %}
+        <div class="planned-session {{ 'done' if item.completed else '' }}" style="--session-color: {{ item.color }}">
+          <div>
+            <strong>{{ item.title }}</strong>
+            <p>{{ item.duration_label }} · {{ item.definition.intensity }} · {{ item.recovery_label }}</p>
+            {% if item.notes %}<small>{{ item.notes }}</small>{% endif %}
+          </div>
+          <form method="post" action="/training/plan/session/{{ item.id }}/complete">
+            <button type="submit" name="completed" value="{{ '' if item.completed else '1' }}" aria-label="{{ 'Mark incomplete' if item.completed else 'Mark complete' }}">{{ 'Done' if item.completed else 'Complete' }}</button>
+          </form>
+        </div>
+        {% else %}
+        <div class="planned-empty">Open</div>
+        {% endfor %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="recent-training panel-lite">
+  <div class="section-head">
+    <div>
+      <span class="training-eyebrow">History</span>
+      <h2>Recent logs</h2>
+    </div>
+    {% if snap.recent_sessions %}
+    <form method="post" action="/training/repeat">
+      <button type="submit" class="text-button">Repeat last</button>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if snap.recent_sessions %}
+  <div class="log-list">
+    {% for s in snap.recent_sessions[:5] %}
+    <details class="log-row">
+      <summary>
+        <span class="log-date">{{ s.day.strftime('%d %b') }}</span>
+        <span class="log-main">
+          <strong>{{ s.title }}</strong>
+          <small>{{ s.category | title }} · {{ s.set_count }} sets{% if s.volume %} · {{ '%.0f' % s.volume }} kg·reps{% endif %}</small>
+        </span>
+        <span class="log-state {{ 'done' if s.completed else 'open' }}">{{ 'Done' if s.completed else 'Open' }}</span>
+      </summary>
+      <div class="sets">
+        {% for row in s.sets %}
+        <div class="set">{{ row.exercise }} · set {{ row.set_number }} · {{ row.reps if row.reps is not none else '?' }} reps{% if row.weight_kg is not none %} · {{ '%g' % row.weight_kg }} kg{% endif %}{% if row.rpe is not none %} · RPE {{ '%g' % row.rpe }}{% endif %}</div>
+        {% else %}
+        <div class="set">No sets captured for this log.</div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-fitness">
+    <strong>Your training history starts with the next completed session.</strong>
+    <p>Log one strength session or complete today’s run and ORION will begin building progression, consistency, and recovery patterns.</p>
+    <a class="btn ghost secondary" href="/strength/start">Start first workout</a>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

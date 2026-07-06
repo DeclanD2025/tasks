@@ -12,6 +12,7 @@ from app.ui.themes.theme import PALETTE, TYPE
 
 class TopBar(QWidget):
     sync_requested = Signal()
+    settings_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -43,6 +44,11 @@ class TopBar(QWidget):
         sync.clicked.connect(self.sync_requested.emit)
         lay.addSpacing(14)
         lay.addWidget(sync)
+
+        settings = QPushButton("⚙  Settings")
+        settings.setObjectName("GhostButton")
+        settings.clicked.connect(self.settings_requested.emit)
+        lay.addWidget(settings)
         self._refresh_clock()
 
     def set_page(self, title: str, subtitle: str) -> None:

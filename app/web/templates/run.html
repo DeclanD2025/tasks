@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}ORION — Run Plan{% endblock %}
+{% block heading %}Run Plan{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  <span>{{ snap.goal }}</span>
+  <span>WK {{ snap.current_week }}</span>
+  <span>{{ snap.week_distance_km }}/{{ snap.weekly_target_km }} km</span>
+  <span class="{{ 'ok' if snap.adherence_label == 'on track' else 'alert' if snap.adherence_label == 'behind plan' else '' }}">{{ snap.adherence_label }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="panel hero">
+  <h2>Next run</h2>
+  <div class="hero-status">
+    <h1 style="font-size:21px">{{ snap.next_run.title }}</h1>
+    <div class="estimate">{{ snap.next_run.session_type }} · intensity {{ snap.next_run.intensity }}</div>
+  </div>
+  <div class="directive-primary"><span class="tag">Execute</span><span>{{ snap.next_run.detail }}</span></div>
+  {% if recovery.score is not none %}
+  <p class="note">Recovery gate: {{ recovery.label }} ({{ '%.0f' % recovery.score }}/100){% if recovery.estimated %}, estimated{% endif %} — low scores automatically downgrade intensity.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>This week</h2>
+  <div class="stat-band">
+    <div class="stat"><div class="n">{{ snap.week_distance_km }}<small> km</small></div><div class="l">Done</div></div>
+    <div class="stat"><div class="n">{{ snap.weekly_target_km }}<small> km</small></div><div class="l">Target</div></div>
+    <div class="stat"><div class="n">{{ (snap.weekly_target_km - snap.week_distance_km) | round(1) }}<small> km</small></div><div class="l">Remaining</div></div>
+  </div>
+  {% set ratio = (snap.week_distance_km / snap.weekly_target_km * 100) if snap.weekly_target_km else 0 %}
+  <div class="bar" role="progressbar" aria-valuenow="{{ '%.0f' % ratio }}" aria-valuemin="0" aria-valuemax="100">
+    <i style="width: {{ [ratio, 100] | min }}%"></i>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Week plan</h2>
+  <div class="directives">
+    {% for run in snap.weekly_plan %}
+    <div class="directive {{ 'prio-low' if run.intensity == 'low' else '' }}">
+      <span class="area">{{ run.day_label }}</span>
+      <span class="order">{{ run.title }}</span>
+      <span class="detail">{{ run.detail }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="note" style="margin-top:10px">Guardrail: {{ snap.guardrail }}</p>
+</section>
+
+{% if route_suggestions %}
+<section class="panel">
+  <h2>Route options for this distance</h2>
+  <div class="rows">
+    {% for r in route_suggestions %}
+    <a class="route-card tappable" href="/routes/{{ r.id }}">
+      <span class="rc-name">{{ r.name }}</span>
+      <span class="rc-meta">{{ '%.1f' % (r.distance_meters / 1000) }} km · {{ r.stats.attempts }} attempt{{ 's' if r.stats.attempts != 1 }}</span>
+      {% if r.stats.best_time_seconds %}<span class="rc-pb">PB <b>{{ format_duration(r.stats.best_time_seconds) }}</b></span>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Why this target</h2>
+  <p class="hint">The week target protects <b>{{ snap.goal }}</b>. It is grown from
+  your last four weeks of actual running (capped at roughly +10–15%), and recovery
+  gates intensity: a low readiness score downgrades the session, never shames it.
+  Override the target any time in <a href="/settings">Settings</a>.</p>
+</section>
+
+<details class="more">
+  <summary><span class="h">Recent base · 28 days</span><span class="n">{{ snap.recent_frequency }} runs</span></summary>
+  <div class="stat-band">
+    <div class="stat"><div class="n">{{ snap.recent_frequency }}</div><div class="l">Runs</div></div>
+    <div class="stat"><div class="n">{{ snap.average_distance_km }}<small> km</small></div><div class="l">Avg distance</div></div>
+    <div class="stat"><div class="n">{{ snap.average_pace_label }}</div><div class="l">Avg pace</div></div>
+  </div>
+</details>
+{% endblock %}

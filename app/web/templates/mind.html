@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}ORION — Mind{% endblock %}
+{% block heading %}Mind{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  {% if snap.mood_average is not none %}<span>mood {{ '%.1f' % snap.mood_average }}/10 · 7d</span>{% endif %}
+  {% if snap.stress_average is not none %}<span>stress {{ '%.1f' % snap.stress_average }}/10 · 7d</span>{% endif %}
+  {% if stoic.eudaimonia_index is not none %}<span>EUD {{ '%.0f' % stoic.eudaimonia_index }}/100</span>{% endif %}
+  <span class="{{ 'ok' if snap.trend_label == 'improving' else 'alert' if snap.trend_label == 'dipping' else '' }}">{{ 'trend pending' if snap.trend_label == 'no check-ins yet' else snap.trend_label }}</span>
+  {% if snap.checkin_streak %}<span>CHK {{ snap.checkin_streak }}d</span>{% endif %}
+  {% if snap.reflection_streak %}<span>RFL {{ snap.reflection_streak }}d</span>{% endif %}
+  {% if snap.mindfulness_streak %}<span>MND {{ snap.mindfulness_streak }}d</span>{% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+{% if snap.crisis_note %}
+<div class="crisis" role="alert">{{ snap.crisis_note }}</div>
+{% endif %}
+
+{{ ui.toast(saved_note) }}
+
+{% set t = snap.today or {} %}
+{% set morning_done = t and t.get('intention') is not none and (t.get('intention') or t.get('factors') or snap.today) %}
+{% set evening_done = t and (t.get('evening_note') or '') | trim %}
+{% set today_entry = stoic.checkins[0] if stoic.checkins and stoic.checkins[0].day == today_date else None %}
+
+<section class="panel hero mind-hero">
+  <h2>Mind command</h2>
+  <div class="mind-command">
+    <div>
+      <span class="k">Current protocol</span>
+      <h1>{{ snap.protocol_title }}</h1>
+      <p>{{ snap.evening_prompt if phase == 'evening' else (snap.protocol_actions[0] if snap.protocol_actions else 'Run the smallest useful practice.') }}</p>
+    </div>
+    <div class="maxim compact">
+      <blockquote>{{ stoic.maxim }}</blockquote>
+      <cite>{{ stoic.maxim_author }}</cite>
+    </div>
+  </div>
+  <div class="mind-strip">
+    <div><span>Mood</span><b>{{ '%.1f' % snap.mood_average if snap.mood_average is not none else '—' }}</b></div>
+    <div><span>Stress</span><b>{{ '%.1f' % snap.stress_average if snap.stress_average is not none else '—' }}</b></div>
+    <div><span>Eudaimonia</span><b>{{ '%.0f' % stoic.eudaimonia_index if stoic.eudaimonia_index is not none else '—' }}</b></div>
+    <div><span>Control</span><b>{{ '%.0f' % (stoic.control.value * 100) if stoic.control.has_data else '—' }}</b></div>
+  </div>
+</section>
+
+<nav class="segmented" aria-label="Day phase">
+  <a href="/mind?phase=morning" class="{{ 'active' if phase == 'morning' else '' }}"
+     {% if phase == 'morning' %}aria-current="true"{% endif %}>
+    Morning brief {% if snap.today %}<span class="done">✓</span>{% endif %}
+  </a>
+  <a href="/mind?phase=evening" class="{{ 'active' if phase == 'evening' else '' }}"
+     {% if phase == 'evening' %}aria-current="true"{% endif %}>
+    Evening debrief {% if evening_done %}<span class="done">✓</span>{% endif %}
+  </a>
+</nav>
+
+{% if phase == 'morning' %}
+{# ------------------------------------------------ MORNING BRIEF #}
+<section class="panel hero">
+  <h2>{{ snap.protocol_title }}</h2>
+  <div class="directives">
+    {% for action in snap.protocol_actions %}
+    <div class="directive prio-low">
+      <span class="area">{{ '%02d' % loop.index }}</span>
+      <span class="order">{{ action }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="note" style="margin-top:10px">Planning prompts, not medical advice. The protocol adapts to your check-in.</p>
+</section>
+
+<section class="panel">
+  <h2>{{ 'Update this morning' if snap.today else 'Morning check-in · 60 seconds' }}</h2>
+  <form method="post" action="/mind/morning" class="stack" data-offline-queue data-offline-label="morning brief">
+    {% for field, label, default in [
+      ('mood', 'Mood', 5), ('energy', 'Energy', 5),
+      ('anxiety', 'Anxiety', 3), ('sleep_quality', 'Sleep quality', 5)] %}
+    {{ ui.scale_input(field, label, t.get(field, default), labels=scale_labels.get(field)) }}
+    {% endfor %}
+    <fieldset style="border:0;padding:0;margin:0">
+      <legend class="f" style="margin-bottom:6px">What's influencing today</legend>
+      <div class="chips">
+        {% for factor in mood_factors %}
+        <label><input type="checkbox" name="factors" value="{{ factor }}"
+          {{ 'checked' if factor in (t.get('factors') or []) }}>{{ factor }}</label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <label class="f">One intention for today
+      <input type="text" name="intention" value="{{ t.get('intention', '') }}" maxlength="300"
+             placeholder="The single thing that would make today count">
+    </label>
+    <label class="f">Triggers to watch
+      <input type="text" name="triggers" value="{{ t.get('triggers', '') }}" maxlength="300">
+    </label>
+    <button type="submit" class="primary">Log morning brief</button>
+  </form>
+</section>
+
+{% else %}
+{# ------------------------------------------------ EVENING DEBRIEF #}
+{% if t.get('intention') %}
+<section class="panel hero">
+  <h2>Morning intention</h2>
+  <div class="directive-primary"><span class="tag">Review</span><span>{{ t.get('intention') }}</span></div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>{{ 'Update this evening' if evening_done else 'Evening debrief' }}</h2>
+  <form method="post" action="/mind/evening" class="stack" data-offline-queue data-offline-label="evening debrief">
+    {% if t.get('intention') %}
+    <label class="check"><input type="checkbox" name="intention_done" value="1"
+      {{ 'checked' if t.get('intention_done') }}> Intention happened (even partly)</label>
+    {% endif %}
+    {% for field, label, default in [('day_rating', 'Rate the day', 5), ('stress', 'Stress now', 3)] %}
+    {{ ui.scale_input(field, label, t.get(field) or default, labels=scale_labels.get(field)) }}
+    {% endfor %}
+    <div class="prompt-line">{{ snap.evening_prompt }}</div>
+    <label class="f">Reflection
+      <textarea name="evening_note" maxlength="4000"
+        placeholder="Write freely — ORION reads it locally for thinking patterns.">{{ t.get('evening_note', '') }}</textarea>
+    </label>
+    <details class="more">
+      <summary><span class="h">Thought check · CBT</span><span class="n">optional</span></summary>
+      {% set tr = t.get('thought_record') or {} %}
+      <div class="stack">
+        <label class="f">Situation — just the facts
+          <input type="text" name="situation" value="{{ tr.get('situation', '') }}" maxlength="600">
+        </label>
+        <label class="f">Automatic thought — what the mind said
+          <input type="text" name="thought" value="{{ tr.get('thought', '') }}" maxlength="600">
+        </label>
+        <label class="f">Balanced thought — what a fair observer would say
+          <input type="text" name="balanced" value="{{ tr.get('balanced', '') }}" maxlength="600">
+        </label>
+      </div>
+    </details>
+    <label class="f">One protective action for tomorrow
+      <input type="text" name="protective_actions" value="{{ t.get('protective_actions', '') }}" maxlength="300">
+    </label>
+    <button type="submit" class="primary">Log evening debrief</button>
+  </form>
+</section>
+
+{% if reflection %}
+<section class="panel">
+  <h2>Pattern readout</h2>
+  {% if reflection.trap_hits %}
+  {% for hit in reflection.trap_hits %}
+  <div class="trap">
+    <div class="name">{{ hit.label }}</div>
+    <div class="desc">{{ hit.description }}</div>
+    <div class="reframe">{{ hit.reframe_prompt }}</div>
+    <div class="reframe">{{ hit.act_move }}</div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="hint">No unhelpful thinking patterns detected in tonight's reflection.</p>
+  {% endif %}
+  <p class="hint">{{ reflection.next_action_prompt }}</p>
+  <details class="more" style="margin-top:10px">
+    <summary><span class="h">Regulation · {{ reflection.regulation.label }}</span><span class="n">{{ reflection.regulation.when_to_use }}</span></summary>
+    <ul class="clean">
+      {% for step in reflection.regulation.steps %}<li>{{ step }}</li>{% endfor %}
+    </ul>
+    <p class="note">{{ reflection.regulation.mechanism }}</p>
+  </details>
+  <p class="note" style="margin-top:10px">Deterministic pattern-matching on your own words — a reflection aid, not a diagnosis.</p>
+</section>
+{% endif %}
+{% endif %}
+
+<div class="mind-practice-grid">
+  <section class="panel">
+    <h2>Stoic practice</h2>
+    <form method="post" action="/stoic/entry" class="stack" data-offline-queue data-offline-label="stoic practice">
+      <label class="f">Virtue in focus
+        <select name="virtue_focus">
+          {% for v in stoic.virtues %}
+          <option value="{{ v.key }}" {{ 'selected' if today_entry and today_entry.virtue_focus == v.key }}>{{ v.name }} · {{ v.greek }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <fieldset style="border:0;padding:0;margin:0">
+        <legend class="f" style="margin-bottom:6px">Effort aimed at what you control</legend>
+        <div class="scale">
+          {% for n in range(10, 101, 10) %}
+          <label>
+            <input type="radio" name="control_pct" value="{{ n }}"
+              {{ 'checked' if (today_entry.control_pct if today_entry else 50) == n }}>{{ n // 10 }}
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <div class="mind-check-grid">
+        <label class="check"><input type="checkbox" name="reflected" value="1"
+          {{ 'checked' if today_entry and today_entry.reflected }}> Reflected deliberately</label>
+        <label class="check"><input type="checkbox" name="served_others" value="1"
+          {{ 'checked' if today_entry and today_entry.served_others }}> Served someone else</label>
+        <label class="check"><input type="checkbox" name="faced_hard_thing" value="1"
+          {{ 'checked' if today_entry and today_entry.faced_hard_thing }}> Faced a hard thing</label>
+        <label class="check"><input type="checkbox" name="restrained_impulse" value="1"
+          {{ 'checked' if today_entry and today_entry.restrained_impulse }}> Restrained an impulse</label>
+      </div>
+      <label class="f">Study minutes
+        <input type="number" name="study_minutes" min="0" max="600" inputmode="numeric"
+               value="{{ today_entry.study_minutes if today_entry else 0 }}">
+      </label>
+      <label class="f">Reflection
+        <textarea name="reflection" maxlength="4000"
+          placeholder="What did the day ask of you, and what did you answer?">{{ today_entry.reflection if today_entry else '' }}</textarea>
+      </label>
+      <button type="submit" class="primary">Log practice</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Virtues</h2>
+    <div class="virtues compact">
+      {% for v in stoic.virtues %}
+      <div class="virtue">
+        <span class="name">{{ v.name }}</span>
+        <span class="greek">{{ v.greek }}</span>
+        <div class="score">{{ v.display }}{% if v.has_data %}<small> /100</small>{% endif %}</div>
+        <div class="note">{{ v.note }}</div>
+        <svg class="motif" viewBox="0 0 64 64" aria-hidden="true">
+          {% if v.key == 'wisdom' %}
+          <path d="M14 30 q0 -16 18 -16 q18 0 18 16 q0 22 -18 26 q-18 -4 -18 -26 z"/>
+          <circle cx="24" cy="28" r="6.5"/><circle cx="40" cy="28" r="6.5"/>
+          <path d="M17 19 l7 4 M47 19 l-7 4 M30 34 l2 4 l2 -4"/>
+          {% elif v.key == 'justice' %}
+          <line x1="32" y1="10" x2="32" y2="50"/><line x1="12" y1="18" x2="52" y2="18"/>
+          <path d="M12 18 l-6 14 h12 z M52 18 l-6 14 h12 z"/>
+          <line x1="24" y1="54" x2="40" y2="54"/>
+          {% elif v.key == 'courage' %}
+          <line x1="14" y1="12" x2="50" y2="12"/><line x1="17" y1="17" x2="47" y2="17"/>
+          <line x1="24" y1="20" x2="24" y2="48"/><line x1="32" y1="20" x2="32" y2="48"/><line x1="40" y1="20" x2="40" y2="48"/>
+          <line x1="14" y1="56" x2="50" y2="56"/>
+          {% else %}
+          <path d="M26 12 h12 M28 12 q-1 6 -6 9 q-8 5 -8 15 q0 14 18 16 q18 -2 18 -16 q0 -10 -8 -15 q-5 -3 -6 -9"/>
+          <path d="M20 26 q-7 0 -6 7 q1 5 7 4 M44 26 q7 0 6 7 q-1 5 -7 4"/>
+          {% endif %}
+        </svg>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="memento compact">
+      <h2>Memento mori</h2>
+      {% set pct = (stoic.life_weeks_lived / stoic.life_weeks_total * 100) if stoic.life_weeks_total else 0 %}
+      <div class="rule"><i style="width: {{ '%.1f' % pct }}%"></i></div>
+      <div class="legend">
+        <span>week {{ stoic.life_weeks_lived }}</span>
+        <span>{{ stoic.life_weeks_total - stoic.life_weeks_lived }} remain</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<section class="panel">
+  <h2>Stillness</h2>
+  <div class="stat-band">
+    <button type="button" class="stat" data-detail="mindfulness" style="background:none;border:0;box-shadow:none;padding:0;text-align:left;cursor:pointer;min-height:0">
+      <div class="n">{{ snap.mindfulness_week_minutes }}<small> min</small></div><div class="l">Logged · 7d ›</div>
+    </button>
+    <div class="stat"><div class="n">{{ snap.mindfulness_streak }}<small> d</small></div><div class="l">Streak</div></div>
+    <div class="stat"><div class="n">{{ snap.imported_mindful_week_minutes }}<small> min</small></div><div class="l">Apple Health · 7d</div></div>
+  </div>
+
+  <div class="med-presets" style="margin-top:14px">
+    <button type="button" class="btn ghost" data-med-minutes="1" data-med-kind="breathwork">1m reset</button>
+    <button type="button" class="btn ghost" data-med-minutes="3" data-med-kind="breathwork">3m breath</button>
+    <button type="button" class="btn ghost" data-med-minutes="5" data-med-kind="meditation">5m sit</button>
+    <button type="button" class="btn ghost" data-med-minutes="10" data-med-kind="body_scan">10m deep</button>
+  </div>
+
+  <div class="med-stage" data-med-stage>
+    <div class="med-orb" data-med-orb aria-hidden="true"></div>
+    <div class="med-time" data-med-time>03:00</div>
+    <div class="med-phase" data-med-phase></div>
+    <button type="button" class="btn ghost" data-med-stop>End early</button>
+  </div>
+
+  <p class="hint" style="margin-top:12px">Three minutes daily beats an hour monthly.
+  The orb breathes at eight seconds a cycle — follow it, or ignore it and just sit.</p>
+
+  <form method="post" action="/mind/mindfulness" class="stack" style="margin-top:10px"
+        data-offline-queue data-offline-label="mindfulness session" data-med-form>
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+      <label class="f">Minutes
+        <input type="number" name="duration_minutes" min="1" max="180" value="3" inputmode="numeric">
+      </label>
+      <label class="f">Type
+        <select name="kind">
+          {% for kind in mindfulness_types %}<option value="{{ kind }}">{{ kind | title }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    <label class="f">How it landed
+      <input type="text" name="note" maxlength="200" placeholder="optional — one honest line">
+    </label>
+    <button type="submit">Log session</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Mind trends</h2>
+  <div class="d-related">
+    <button type="button" data-detail="mood">Mood over time</button>
+    <button type="button" data-detail="stress">Stress over time</button>
+    <button type="button" data-detail="mindfulness">Practice minutes</button>
+    <button type="button" data-detail="sleep">Sleep (context)</button>
+  </div>
+  <p class="hint">Patterns over points. Each trend shows its source, baseline and
+  how it's calculated — and none of it is a diagnosis.</p>
+</section>
+{% endblock %}

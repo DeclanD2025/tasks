@@ -1,0 +1,163 @@
+{# Shared UI vocabulary. Every macro renders honest states: value, estimated,
+   or missing-with-next-action. Cards that can drill down are buttons. #}
+
+{% macro metric_card(m, detail='') %}
+{% set d = delta(m) %}
+{% if detail %}
+<button type="button" class="metric tappable {{ 'missing' if m.quality == 'missing' else '' }}"
+        data-detail="{{ detail }}" aria-haspopup="dialog">
+{% else %}
+<div class="metric {{ 'missing' if m.quality == 'missing' else '' }}">
+{% endif %}
+  <div class="label">{{ m.label }}</div>
+  <div class="value">{{ m.value }}
+    {% if m.quality == 'estimated' %}<small>est.</small>{% endif %}
+  </div>
+  {% if d %}
+  <div class="delta {{ d.tone }}"><span aria-hidden="true">{{ d.glyph }}</span> {{ d.text }}</div>
+  {% elif m.quality != 'missing' and m.series %}
+  <div class="delta">baseline pending</div>
+  {% endif %}
+  <div class="interp">{{ m.interpretation }}</div>
+  {% set pts = spark(m.series) %}
+  {% if pts %}
+  <svg viewBox="0 0 100 28" width="100%" height="28" preserveAspectRatio="none" aria-hidden="true">
+    <polyline points="{{ pts }}"></polyline>
+    <circle class="tip" cx="{{ pts.rsplit(' ', 1)[-1].split(',')[0] }}"
+            cy="{{ pts.rsplit(' ', 1)[-1].split(',')[1] }}" r="1.8"></circle>
+  </svg>
+  {% endif %}
+  {% if detail %}<span class="metric-open" aria-hidden="true">›</span></button>
+  {% else %}</div>{% endif %}
+{% endmacro %}
+
+{% macro signal_board(signals, detail_key=None, title='Signals') %}
+<section class="panel">
+  <h2>{{ title }}</h2>
+  {% if signals.primary %}
+  <div class="grid">
+    {% for m in signals.primary %}{{ metric_card(m, detail_key(m.label) if detail_key else '') }}{% endfor %}
+  </div>
+  {% else %}
+  {{ empty_state('No live signals yet.', 'Import a Health Auto Export file and this board lights up.', '/data', 'Open Data Vault') }}
+  {% endif %}
+</section>
+{% if signals.secondary %}
+<details class="more">
+  <summary><span class="h">More signals</span><span class="n">{{ signals.secondary | length }} tracked</span></summary>
+  <div class="grid">
+    {% for m in signals.secondary %}{{ metric_card(m, detail_key(m.label) if detail_key else '') }}{% endfor %}
+  </div>
+</details>
+{% endif %}
+{% if signals.missing %}
+<section class="panel">
+  <h2>Not captured</h2>
+  <div class="gaps">
+    {% for m in signals.missing %}<span class="gap">{{ m.label }} — {{ m.interpretation }}</span>{% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endmacro %}
+
+{% macro score_ring(score, label, unit='readiness', detail='') %}
+{% set pct = (score or 0) / 100 %}
+{% set c = 2 * 3.14159 * 62 %}
+{% if detail %}
+<button type="button" class="ring tappable" data-detail="{{ detail }}"
+        aria-label="{{ unit | title }} {{ label }} — open detail" aria-haspopup="dialog">
+{% else %}
+<div class="ring" role="img" aria-label="{{ unit | title }} {{ label }}">
+{% endif %}
+  <svg width="148" height="148" viewBox="0 0 148 148">
+    <circle class="ticks" cx="74" cy="74" r="70" fill="none" stroke-width="4"></circle>
+    <circle class="track" cx="74" cy="74" r="62" fill="none" stroke-width="5"></circle>
+    <circle class="arc" cx="74" cy="74" r="62" fill="none" stroke-width="5"
+            stroke-dasharray="{{ '%.1f' % (pct * c) }} {{ '%.1f' % c }}"></circle>
+  </svg>
+  <div class="core">
+    {% if score is not none %}<b>{{ '%.0f' % score }}</b><span>{{ unit }}</span>
+    {% else %}<b>—</b><span>no data</span>{% endif %}
+  </div>
+{% if detail %}</button>{% else %}</div>{% endif %}
+{% endmacro %}
+
+{% macro severity_pill(severity) %}
+<span class="pill {{ severity }}">{{ severity }}</span>
+{% endmacro %}
+
+{% macro scale_input(name, label, value, labels=None) %}
+<fieldset class="scale-field">
+  <legend class="f">{{ label }}
+    {% if labels %}<span class="scale-hint" data-scale-hint="{{ name }}">{{ labels.get(value, '') }}</span>{% endif %}
+  </legend>
+  <div class="scale" {% if labels %}data-scale="{{ name }}"{% endif %}>
+    {% for n in range(1, 11) %}
+    <label>
+      <input type="radio" name="{{ name }}" value="{{ n }}" {{ 'checked' if value == n }}
+        {% if labels and labels.get(n) %}data-scale-label="{{ labels.get(n) }}"{% endif %}>{{ n }}
+    </label>
+    {% endfor %}
+  </div>
+  {% if labels %}
+  <div class="scale-ends" aria-hidden="true"><span>{{ labels.get(1, '') }}</span><span>{{ labels.get(10, '') }}</span></div>
+  {% endif %}
+</fieldset>
+{% endmacro %}
+
+{% macro toast(message) %}
+{% if message %}
+<div class="toast" role="status">{{ message }}</div>
+{% endif %}
+{% endmacro %}
+
+{% macro insight_queue(insights) %}
+{% if insights %}
+<div class="queue">
+  {% for ins in insights %}
+  <div class="finding">
+    <div class="head"><b>{{ ins.title }}</b> {{ severity_pill(ins.severity) }}</div>
+    <div class="body">{{ ins.explanation }} <span class="note">({{ ins.area }} · confidence {{ ins.confidence }})</span></div>
+    <div class="act">{{ ins.action }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="hint">No findings right now. Quiet is a valid state.</p>
+{% endif %}
+{% endmacro %}
+
+{% macro empty_state(title, body, href='', cta='') %}
+<div class="empty">
+  <svg class="empty-mark" viewBox="0 0 48 48" aria-hidden="true">
+    <circle cx="24" cy="24" r="14" fill="none" stroke-dasharray="1.5 5"/>
+    <circle cx="24" cy="24" r="2"/>
+  </svg>
+  <strong>{{ title }}</strong>
+  <p>{{ body }}</p>
+  {% if href %}<a class="btn ghost secondary" href="{{ href }}">{{ cta or 'Open' }}</a>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro progress_line(value, target, unit='', label='') %}
+{% set ratio = (value / target * 100) if target else 0 %}
+<div class="progress-line">
+  {% if label %}<span class="pl-label">{{ label }}</span>{% endif %}
+  <span class="pl-value">{{ value }}{{ unit }} <small>/ {{ target }}{{ unit }}</small></span>
+  <div class="bar" role="progressbar" aria-valuenow="{{ '%.0f' % ratio }}" aria-valuemin="0" aria-valuemax="100">
+    <i style="width: {{ [ratio, 100] | min }}%"></i>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro freshness(label) %}
+<span class="fresh-chip">{{ label }}</span>
+{% endmacro %}
+
+{% macro source_chip(provider, confidence='') %}
+{% set names = {'off': 'Open Food Facts', 'generic': 'UK generic', 'user': 'Corrected by you', 'manual': 'Manual', 'local': 'Saved'} %}
+<span class="src-chip conf-{{ confidence or 'medium' }}"
+      title="Source: {{ names.get(provider, provider) }}{% if confidence %} · confidence {{ confidence }}{% endif %}">
+  {{ names.get(provider, provider) }}{% if confidence == 'low' %} · low confidence{% endif %}
+</span>
+{% endmacro %}

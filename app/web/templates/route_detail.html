@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}ORION — {{ route.name }}{% endblock %}
+{% block heading %}{{ route.name }}{% endblock %}
+{% block head %}<script src="/static/orion-map.js" defer></script>{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  <span>{{ '%.1f' % (route.distance_meters / 1000) if route.distance_meters else '—' }} km</span>
+  <span>{{ route.sport_type }}</span>
+  <span>{{ dash.attempts | length }} attempt{{ 's' if dash.attempts | length != 1 }}</span>
+  {% if route.elevation_gain_meters %}<span>+{{ '%.0f' % route.elevation_gain_meters }}m</span>{% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="cols">
+<div class="col">
+<section class="panel" style="padding:0; overflow:hidden">
+  <div class="map-panel" data-map-ratio data-map-geometry="/api/routes/{{ route.id }}/geometry.json"></div>
+</section>
+
+<section class="panel">
+  <h2>Record</h2>
+  <div class="stat-band">
+    <div class="stat">
+      <div class="n">{{ format_duration(dash.route.stats.best_time_seconds) if dash.route.stats.best_time_seconds else '—' }}</div>
+      <div class="l">Best time</div>
+    </div>
+    <div class="stat">
+      <div class="n">{{ format_pace(dash.route.stats.fastest_pace_seconds_per_km) if dash.route.stats.fastest_pace_seconds_per_km else '—' }}</div>
+      <div class="l">Best pace</div>
+    </div>
+    <div class="stat">
+      <div class="n">{{ format_duration(dash.route.stats.latest_time_seconds) if dash.route.stats.latest_time_seconds else '—' }}</div>
+      <div class="l">Latest</div>
+    </div>
+  </div>
+  {% if dash.insights %}
+  <ul class="clean" style="margin-top:12px">
+    {% for line in dash.insights %}<li>{{ line }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+{% if pace_series | length > 1 %}
+<section class="panel">
+  <h2>Pace trend</h2>
+  <div class="d-chart" data-inline-chart data-chart-series='{{ pace_series | tojson }}'
+       data-chart-decimals="2"></div>
+  <p class="hint">Minutes per km across attempts — lower is faster. Effort context
+  (heart rate) is listed per attempt below.</p>
+</section>
+{% endif %}
+
+</div>
+<div class="col">
+<section class="panel">
+  <h2>Attempts</h2>
+  {% if dash.attempts %}
+  {% for a in dash.attempts %}
+  <div class="attempt-row {{ 'best' if dash.best_attempt and a.id == dash.best_attempt.id }}">
+    <span class="ar-date">{{ a.attempt_date.strftime('%d %b %y') }}</span>
+    <span class="ar-time">{{ format_duration(a.duration_seconds) if a.duration_seconds else '—' }}</span>
+    <span class="ar-pace">{{ format_pace(a.average_pace_seconds_per_km) if a.average_pace_seconds_per_km else '—' }}/km</span>
+    <span class="ar-hr">{{ '%.0f' % a.average_heart_rate if a.average_heart_rate else '—' }} bpm</span>
+  </div>
+  {% endfor %}
+  {% else %}
+  {{ ui.empty_state('No attempts assigned yet.',
+      'Assign a GPS workout from the Atlas and this becomes a leaderboard against yourself.', '/routes', 'Back to Atlas') }}
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Route</h2>
+  <div class="rows">
+    <div class="row"><span class="k">Distance</span>
+      <span class="v"><b>{{ '%.2f' % (route.distance_meters / 1000) if route.distance_meters else '—' }} km</b></span></div>
+    {% if route.elevation_gain_meters %}
+    <div class="row"><span class="k">Climb</span>
+      <span class="v"><b>+{{ '%.0f' % route.elevation_gain_meters }} m</b></span></div>
+    {% endif %}
+    {% if route.description %}
+    <div class="row"><span class="k">Notes</span><span class="v">{{ route.description }}</span></div>
+    {% endif %}
+  </div>
+  <div class="btnrow compact" style="margin-top:12px">
+    <a class="btn ghost" href="/data/export/routes/{{ route.id }}.gpx">Export GPX</a>
+    <form method="post" action="/routes/{{ route.id }}/delete"
+          data-confirm="Delete this route? Attempts are unassigned, workouts are kept.">
+      <button type="submit" class="btn ghost danger-text">Delete route</button>
+    </form>
+  </div>
+</section>
+</div>
+</div>
+{% endblock %}

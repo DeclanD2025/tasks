@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}ORION — Scan{% endblock %}
+{% block heading %}Scan Barcode{% endblock %}
+{% block head %}<script src="/static/orion-scan.js" defer></script>{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  <span>Open Food Facts</span>
+  <span>free · keyless</span>
+  <span>corrections stay local</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="scan-stage" data-scan-stage>
+    <video playsinline muted></video>
+    <div class="scan-reticle" aria-hidden="true"></div>
+  </div>
+  <p class="scan-status" data-scan-status role="status">Starting camera…</p>
+
+  <form class="stack" data-scan-manual style="margin-top:8px">
+    <label class="f">Or type the barcode
+      <input type="text" name="barcode" inputmode="numeric" autocomplete="off"
+             placeholder="e.g. 5000159484695" maxlength="20">
+    </label>
+    <button type="submit" class="ghost">Look up</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Result</h2>
+  <div data-scan-result>
+    <p class="hint">Scan or enter a barcode and the product appears here with
+    per-100g values and a source chip. Wrong numbers? Log it, then correct the
+    food once — your version wins from then on.</p>
+  </div>
+
+  <form method="post" action="/nutrition/log" class="stack" data-log-form data-keep-values hidden
+        style="margin-top:12px; border-top:1px solid var(--line); padding-top:14px">
+    <input type="hidden" name="name" value="">
+    <input type="hidden" name="food_id" value="">
+    <input type="hidden" name="food_payload" value="">
+    <input type="hidden" name="source" value="scan">
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+      <label class="f">Weight (g)
+        <input type="number" name="grams" min="1" max="3000" step="1" inputmode="numeric">
+      </label>
+      <label class="f">Meal
+        <select name="meal_type">
+          {% for m in meal_types %}<option value="{{ m }}">{{ m | title }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="hint"><b data-portion-preview></b></div>
+    <button type="submit" class="primary">Log it</button>
+  </form>
+  <a class="btn ghost secondary" href="/nutrition" style="margin-top:12px">← Back to Fuel</a>
+</section>
+{% endblock %}

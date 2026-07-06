@@ -11,18 +11,21 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.core.logging import get_logger
 from app.db.database import session_scope
-from app.db.models import Domain, Insight, InsightSeverity
+from app.db.models import Domain, Insight, InsightSeverity, Workout
 from app.services import (
     activity_frame,
     health_frame,
+    mood_frame,
     monthly_spending,
+    practice_frame,
     project_momentum,
 )
 
@@ -159,6 +162,107 @@ def rule_training_consistency(user_id: int) -> list[InsightDraft]:
     return []
 
 
+def rule_resting_hr_elevated(user_id: int) -> list[InsightDraft]:
+    df = health_frame(user_id).dropna(subset=["resting_hr"])
+    if len(df) < 8:
+        return []
+    latest = float(df["resting_hr"].iloc[-1])
+    baseline = float(df["resting_hr"].iloc[-8:-1].mean())
+    delta = latest - baseline
+    if delta < 4:
+        return []
+    return [
+        InsightDraft(
+            Domain.health,
+            InsightSeverity.warning,
+            "Resting heart rate is elevated against baseline.",
+            f"Latest {latest:.0f} bpm vs 7-day baseline {baseline:.0f} bpm.",
+            "resting_hr_elevated",
+            round(delta, 1),
+        )
+    ]
+
+
+def rule_running_volume_spike(user_id: int) -> list[InsightDraft]:
+    today = date.today()
+    since = today - timedelta(days=14)
+    with session_scope() as s:
+        rows = s.execute(
+            select(Workout.started_at, Workout.distance_meters)
+            .where(Workout.user_id == user_id)
+            .where(Workout.sport_type.in_(["run", "running"]))
+            .where(Workout.started_at >= since)
+        ).all()
+    recent = 0.0
+    prior = 0.0
+    for started_at, meters in rows:
+        km = float(meters or 0.0) / 1000.0
+        if started_at.date() >= today - timedelta(days=7):
+            recent += km
+        else:
+            prior += km
+    if prior <= 0 or recent <= prior * 1.35:
+        return []
+    pct = _pct_change(recent, prior)
+    return [
+        InsightDraft(
+            Domain.health,
+            InsightSeverity.warning,
+            "Running volume is up sharply this week.",
+            f"{recent:.1f} km in the last 7 days vs {prior:.1f} km the prior week.",
+            "running_volume_spike",
+            round(pct, 1),
+        )
+    ]
+
+
+def rule_mindfulness_consistency(user_id: int) -> list[InsightDraft]:
+    df = practice_frame(user_id).dropna(subset=["mindful_minutes"])
+    if len(df) < 10:
+        return []
+    recent_days = int((df["mindful_minutes"].tail(7) > 0).sum())
+    prior_days = int((df["mindful_minutes"].iloc[-14:-7] > 0).sum())
+    if recent_days <= prior_days:
+        return []
+    return [
+        InsightDraft(
+            Domain.health,
+            InsightSeverity.positive,
+            "Mindfulness consistency is improving.",
+            f"{recent_days} practice days in the last week vs {prior_days} the prior week.",
+            "mindfulness_consistency",
+            float(recent_days),
+        )
+    ]
+
+
+def rule_mood_lower_on_short_sleep(user_id: int) -> list[InsightDraft]:
+    sleep = health_frame(user_id).dropna(subset=["sleep_minutes"])
+    mood = mood_frame(user_id).dropna(subset=["mood"])
+    if sleep.empty or mood.empty:
+        return []
+    merged = pd.merge(sleep[["day", "sleep_minutes"]], mood, on="day", how="inner")
+    if len(merged) < 8:
+        return []
+    short = merged[merged["sleep_minutes"] < 420]["mood"]
+    normal = merged[merged["sleep_minutes"] >= 420]["mood"]
+    if len(short) < 3 or len(normal) < 3:
+        return []
+    gap = float(normal.mean() - short.mean())
+    if gap < 0.25:
+        return []
+    return [
+        InsightDraft(
+            Domain.health,
+            InsightSeverity.info,
+            "Mood check-ins are lower on short-sleep days.",
+            f"Average mood gap is {gap:.2f} valence points when sleep is under 7h.",
+            "mood_short_sleep",
+            round(gap, 2),
+        )
+    ]
+
+
 def rule_project_output_vs_average(user_id: int) -> list[InsightDraft]:
     df = project_momentum(user_id).dropna(subset=["momentum"])
     if df.empty:
@@ -189,6 +293,10 @@ RULES: list[Callable[[int], list[InsightDraft]]] = [
     rule_sleep_week_over_week,
     rule_deep_work_week_over_week,
     rule_training_consistency,
+    rule_resting_hr_elevated,
+    rule_running_volume_spike,
+    rule_mindfulness_consistency,
+    rule_mood_lower_on_short_sleep,
     rule_project_output_vs_average,
 ]
 

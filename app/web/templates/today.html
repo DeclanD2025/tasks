@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}ORION — Today{% endblock %}
+{% block heading %}Today's Command{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  <span>{{ daypart }}</span>
+  <span>{{ snap.freshness_label }}</span>
+  {% if snap.checkin_streak %}<span>CHK {{ snap.checkin_streak }}d</span>{% endif %}
+  {% set warn = insights | selectattr('severity', 'in', ['warning', 'critical']) | list | length %}
+  {% if warn %}<span class="alert">{{ warn }} watch item{{ 's' if warn != 1 }}</span>
+  {% else %}<span class="ok">no watch items</span>{% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="panel hero command-hero">
+  <span class="ch-date">{{ now.strftime('%A %d %B') }} · {{ daypart }}</span>
+  <h1>{{ snap.status }}</h1>
+  <p class="ch-line">{{ daypart_line }}</p>
+
+  <div class="directive-primary">
+    <span class="tag">Primary action</span>{{ snap.suggested_action }}
+  </div>
+
+  <div class="status-strip">
+    <button type="button" data-detail="readiness">
+      <span class="sk">Readiness</span>
+      <span class="sv {{ 'dim' if snap.score is none }}">{{ snap.score_label | replace('/100','') }}{% if snap.score is not none %}<small>/100</small>{% endif %}</span>
+    </button>
+    <button type="button" data-detail="sleep_debt">
+      <span class="sk">Sleep debt</span>
+      <span class="sv {{ 'dim' if sleep_debt.calibrating }}">{{ sleep_debt.label }}</span>
+    </button>
+    <a href="/training">
+      <span class="sk">Training</span>
+      <span class="sv">{{ snap.training_recommendation | truncate(26, True) }}</span>
+    </a>
+    {% if nutrition %}
+    <a href="/nutrition">
+      <span class="sk">Fuel</span>
+      <span class="sv">{{ '%.0f' % nutrition.totals.calories }}<small> kcal</small></span>
+    </a>
+    {% endif %}
+    <a href="/calendar">
+      <span class="sk">Calendar</span>
+      <span class="sv {{ 'dim' if not cal.count_today }}">{{ cal.count_today or 'clear' }}{% if cal.count_today %}<small> event{{ 's' if cal.count_today != 1 }}</small>{% endif %}</span>
+    </a>
+  </div>
+</section>
+
+{% if cal.next_event or cal.all_day %}
+<div class="calstrip" aria-label="Today's schedule">
+  {% for e in cal.all_day %}
+  <div class="ev"><span class="t">all day</span><span class="n">{{ e.title }}</span></div>
+  {% endfor %}
+  {% if cal.next_event %}
+  <div class="ev">
+    <span class="t">next · {{ cal.next_event.starts_at.strftime('%H:%M') }}</span>
+    <span class="n">{{ cal.next_event.title }}</span>
+  </div>
+  {% if cal.remaining > 1 %}
+  <a class="ev" href="/calendar">
+    <span class="t">then</span>
+    <span class="n">{{ cal.remaining - 1 }} more today →</span>
+  </a>
+  {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+
+<section class="panel">
+  <h2>Mission plan</h2>
+  <div class="mission">
+    {% for item in snap.plan[:3] %}
+    <a class="directive prio-{{ item.priority }}"
+       href="/{{ {'fitness':'training','run_plan':'training','mental_health':'mind','finance':'money','health':'health'}.get(item.route_key, '') }}">
+      <span class="area">{{ item.area }}</span>
+      <span class="order">{{ item.title }}</span>
+      <span class="detail">{{ item.detail }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% if snap.plan | length > 3 %}
+  <details class="more" style="margin:8px 0 0; border-top:0; padding:6px 0 0">
+    <summary><span class="h">Can wait</span><span class="n">{{ snap.plan | length - 3 }} more</span></summary>
+    <div class="mission" style="margin-top:10px">
+      {% for item in snap.plan[3:] %}
+      <a class="directive prio-{{ item.priority }}"
+         href="/{{ {'fitness':'training','run_plan':'training','mental_health':'mind','finance':'money','health':'health'}.get(item.route_key, '') }}">
+        <span class="area">{{ item.area }}</span>
+        <span class="order">{{ item.title }}</span>
+        <span class="detail">{{ item.detail }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+</section>
+
+<div class="today-cards">
+  <a class="domain-card tappable" href="/health">
+    <span class="dc-head"><span>Body telemetry</span><span>›</span></span>
+    <span class="dc-main">{{ snap.score_label }}{% if snap.estimated %} <small>estimated</small>{% endif %}</span>
+    <span class="dc-sub">{{ snap.training_recommendation }}</span>
+    <span class="dc-row">
+      {% for m in signals.primary[:3] %}
+      <span class="m"><b>{{ m.value }}</b><span>{{ m.label }}</span></span>
+      {% endfor %}
+    </span>
+  </a>
+
+  <a class="domain-card tappable" href="/training">
+    <span class="dc-head"><span>Training trajectory</span><span>›</span></span>
+    <span class="dc-main">{{ strength.week_sessions }} session{{ 's' if strength.week_sessions != 1 }} this week
+      {% if strength.active %}<small>· workout in progress</small>{% endif %}</span>
+    <span class="dc-sub">{% if strength.week_sessions %}{{ strength.last_trained_label }} · next bias {{ strength.next_muscle }}{% else %}No strength logged yet this week — a simple full-body session opens the account.{% endif %}</span>
+    <span class="dc-row">
+      <span class="m"><b>{{ strength.week_sets }}</b><span>sets</span></span>
+      <span class="m"><b>{{ '%.0f' % strength.week_volume }}</b><span>kg vol</span></span>
+    </span>
+  </a>
+
+  <a class="domain-card tappable" href="/mind{{ '?phase=evening' if daypart in ['evening','night'] else '' }}">
+    <span class="dc-head"><span>Mind</span><span>›</span></span>
+    {% if daypart in ['evening', 'night'] %}
+    <span class="dc-main">{{ 'Day closed.' if evening_done else 'Close the day' }}</span>
+    <span class="dc-sub">{{ snap.mental_nudge if evening_done else 'Debrief, one protective action for tomorrow, done.' }}</span>
+    {% else %}
+    <span class="dc-main">{{ 'Morning brief logged.' if morning_done else 'Morning brief' }}</span>
+    <span class="dc-sub">{{ snap.mental_nudge if morning_done else 'Sixty seconds: state, intention, one obstacle.' }}</span>
+    {% endif %}
+  </a>
+
+  <a class="domain-card tappable" href="/nutrition">
+    <span class="dc-head"><span>Fuel</span><span>›</span></span>
+    {% if nutrition and nutrition.logged_anything %}
+    <span class="dc-main">{{ '%.0f' % nutrition.totals.calories }} kcal <small>of {{ nutrition.targets.calories }}</small></span>
+    <span class="dc-sub">{{ nutrition.insights[0] if nutrition.insights else 'Log meals as they happen — totals build here.' }}</span>
+    <span class="dc-row">
+      <span class="m"><b>{{ '%.0f' % nutrition.totals.protein }}g</b><span>protein</span></span>
+      <span class="m"><b>{{ '%.0f' % nutrition.totals.fibre }}g</b><span>fibre</span></span>
+      <span class="m"><b>{{ '%.0f' % (nutrition.water_ml / 1000) if nutrition.water_ml >= 1000 else nutrition.water_ml }}{{ 'L' if nutrition.water_ml >= 1000 else 'ml' }}</b><span>water</span></span>
+    </span>
+    {% else %}
+    <span class="dc-main">Nothing logged yet</span>
+    <span class="dc-sub">Scan, search or quick-add — first entry takes ten seconds.</span>
+    {% endif %}
+  </a>
+</div>
+
+<section class="panel">
+  <h2>Findings</h2>
+  {{ ui.insight_queue(insights) }}
+</section>
+{% endblock %}

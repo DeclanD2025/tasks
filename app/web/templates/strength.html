@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}ORION — Strength{% endblock %}
+{% block heading %}Strength{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  <span>{{ snap.week_sessions }} sessions · week</span>
+  <span>{{ snap.week_sets }} sets</span>
+  <span>{{ '%.0f' % snap.week_volume }} kg volume</span>
+  <span>{{ snap.next_muscle }} next</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="panel hero strength-hero">
+  <h2>Strength command</h2>
+  <div class="strength-command">
+    <div>
+      <span class="k">This week</span>
+      <h1>{{ snap.week_sessions }} sessions · {{ snap.week_sets }} sets</h1>
+      <p>{{ '%.0f' % snap.week_volume }}kg total volume{% if snap.volume_delta is not none %} · {{ '%+.0f' % snap.volume_delta }}% vs last week{% endif %}</p>
+    </div>
+    <a class="btn primary" href="{{ '/strength/workout/' ~ snap.active.id if snap.active else '/strength/start' }}">
+      {{ 'Resume workout' if snap.active else 'Start workout' }}
+    </a>
+  </div>
+  <div class="directive-primary"><span class="tag">Next signal</span>{{ snap.balance_note }}</div>
+</section>
+
+{% if snap.empty %}
+<section class="panel">
+  <h2>Baseline</h2>
+  <p class="hint">Start your first strength session. ORION will build your lifting history from today.</p>
+  <div class="btnrow" style="margin-top:12px">
+    <a class="btn primary" href="/strength/start">Start Strength Workout</a>
+    <a class="btn ghost" href="/strength/templates">View templates</a>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Training status</h2>
+  <div class="stat-grid">
+    <div class="stat"><div class="n">{{ snap.week_sessions }}</div><div class="l">Strength sessions</div></div>
+    <div class="stat"><div class="n">{{ snap.week_sets }}</div><div class="l">Working sets</div></div>
+    <div class="stat"><div class="n">{{ '%.0f' % snap.week_volume }}</div><div class="l">kg volume</div></div>
+    <div class="stat"><div class="n">{{ snap.next_muscle }}</div><div class="l">Suggested next</div></div>
+  </div>
+  <div class="strength-last">
+    <span>Last trained</span>
+    <b>{{ snap.last_trained_label }}</b>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Activity heatmap</h2>
+  <div class="heatmap" aria-label="Strength activity heatmap">
+    {% for day in snap.heatmap %}
+    <span class="heat heat-{{ day.level }}" title="{{ day.label }} · {{ '%.0f' % day.volume }}kg"></span>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Muscle frequency · 30d</h2>
+  <div class="muscle-grid">
+    {% for row in snap.muscle_frequency %}
+    <div class="muscle-row">
+      <span>{{ row.muscle }}</span>
+      <i style="--v: {{ row.count }}"></i>
+      <b>{{ row.count }}</b>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Strength progression</h2>
+  {% if snap.progressions %}
+  <div class="queue">
+    {% for row in snap.progressions %}
+    <a class="finding strength-link" href="/strength/analytics">
+      <div class="head"><b>{{ row.exercise }}</b><span class="pill {{ 'positive' if row.delta >= 0 else 'warning' }}">{{ '%+.1f' % row.delta }} e1RM</span></div>
+      <svg viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
+        <polyline points="{{ spark(row.points) }}"></polyline>
+      </svg>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="hint">Complete 3 sessions to unlock strength trends.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Recent PRs</h2>
+  {% if snap.recent_prs %}
+  <div class="rows">
+    {% for pr in snap.recent_prs %}
+    <div class="tx"><span class="who">{{ pr.exercise }} · {{ pr.type }}</span><span class="amt pos">{{ '%.1f' % pr.value }}kg</span></div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="hint">No PRs yet. Finish a session to establish your baseline.</p>
+  {% endif %}
+</section>
+
+<div class="strength-actions">
+  <a class="btn ghost" href="/strength/history">History</a>
+  <a class="btn ghost" href="/strength/templates">Templates</a>
+  <a class="btn ghost" href="/strength/analytics">Analytics</a>
+</div>
+{% endblock %}

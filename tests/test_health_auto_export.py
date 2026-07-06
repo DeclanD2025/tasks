@@ -33,6 +33,22 @@ _PAYLOAD = {
                 ],
             },
             {
+                "name": "step_count", "units": "count",
+                "data": [{"qty": 8200, "date": "2026-06-14 19:00:00 +0000"}],
+            },
+            {
+                "name": "active_energy_burned", "units": "kcal",
+                "data": [{"qty": 520, "date": "2026-06-14 19:00:00 +0000"}],
+            },
+            {
+                "name": "apple_exercise_time", "units": "min",
+                "data": [{"qty": 42, "date": "2026-06-14 19:00:00 +0000"}],
+            },
+            {
+                "name": "respiratory_rate", "units": "count/min",
+                "data": [{"qty": 15.4, "date": "2026-06-14 05:00:00 +0000"}],
+            },
+            {
                 "name": "sleep_analysis", "units": "hr",
                 "data": [{"asleep": 7.5, "date": "2026-06-14 02:00:00 +0000"}],
             },
@@ -65,6 +81,10 @@ def test_parse_payload_maps_all_orion_fields():
     assert r["resting_hr"] == 52
     assert r["vo2max"] == 51.4
     assert r["distance_km"] == 10.0     # 4 + 6 summed
+    assert r["steps"] == 8200
+    assert r["active_energy_kcal"] == 520
+    assert r["exercise_minutes"] == 42
+    assert r["respiratory_rate"] == 15.4
     assert r["sleep_minutes"] == 450    # 7.5h asleep
     assert r["mindful_minutes"] == 10
     assert r["mood"] == 0.5             # mean(0.4, 0.6)
@@ -88,6 +108,62 @@ def test_alias_matching_is_tolerant_of_spacing_case():
     ]}}
     rows = parse_payload(payload)
     assert rows[0]["hrv_ms"] == 48.0
+
+
+def test_resting_hr_falls_back_to_heart_rate_daily_min():
+    """When there's no resting_heart_rate metric, the day's minimum heart rate
+    (from the heart_rate stream's Min field) is used as a resting-HR proxy."""
+    payload = {"data": {"metrics": [
+        {"name": "heart_rate", "units": "count/min", "data": [
+            {"Min": 59, "Max": 90, "Avg": 72, "date": "2026-06-14 09:00:00 +0000"},
+            {"Min": 47, "Max": 60, "Avg": 53, "date": "2026-06-14 03:00:00 +0000"},
+        ]},
+    ]}}
+    rows = parse_payload(payload)
+    assert rows[0]["resting_hr"] == 47   # daily minimum across samples
+    assert "heart_rate" not in rows[0]   # internal field is not emitted
+
+
+def test_dedicated_resting_hr_wins_over_heart_rate_proxy():
+    payload = {"data": {"metrics": [
+        {"name": "heart_rate", "units": "count/min",
+         "data": [{"Min": 40, "date": "2026-06-14 03:00:00 +0000"}]},
+        {"name": "resting_heart_rate", "units": "bpm",
+         "data": [{"qty": 55, "date": "2026-06-14 06:00:00 +0000"}]},
+    ]}}
+    rows = parse_payload(payload)
+    assert rows[0]["resting_hr"] == 55   # real metric beats the HR-min proxy
+
+
+def test_real_resting_hr_beats_proxy_across_merged_files(tmp_path):
+    """The crux of the low-RHR bug: one file has only the heart_rate stream
+    (yielding a low min proxy, e.g. 47) and another file for the SAME day has
+    the real Resting Heart Rate metric (e.g. 58, which is HIGHER). The genuine
+    value must win even though it's larger — the old min() merge kept the proxy.
+    """
+    from app.integrations.health_auto_export.parser import parse_folder
+
+    proxy_file = {"data": {"metrics": [
+        {"name": "heart_rate", "units": "count/min",
+         "data": [{"Min": 47, "date": "2026-06-14 03:00:00 +0000"}]},
+    ]}}
+    real_file = {"data": {"metrics": [
+        {"name": "resting_heart_rate", "units": "bpm",
+         "data": [{"qty": 58, "date": "2026-06-14 06:00:00 +0000"}]},
+    ]}}
+
+    # Filenames are read in sorted order; check both orderings so the real
+    # value wins whether it is read before or after the proxy.
+    for label, proxy_name, real_name in (
+        ("proxy_first", "a_proxy.json", "b_real.json"),
+        ("real_first", "a_real.json", "b_proxy.json"),
+    ):
+        d = tmp_path / label
+        d.mkdir()
+        (d / proxy_name).write_text(json.dumps(proxy_file))
+        (d / real_name).write_text(json.dumps(real_file))
+        rows = parse_folder(d)
+        assert rows[0]["resting_hr"] == 58, label
 
 
 def test_parse_file_roundtrip(tmp_path):
@@ -122,6 +198,60 @@ def test_parse_folder_merges_category_files(tmp_path):
     assert r["mood"] == 0.5      # from StateOfMind.json — merged same day
 
 
+def test_stage_based_sleep_sums_real_stages_only():
+    """HAE weekly exports stream sleep as stage segments (value=stage name,
+    qty=hours). We sum Core/Deep/REM/Asleep and exclude Awake / In Bed."""
+    payload = {"data": {"metrics": [
+        {"name": "sleep_analysis", "units": "hr", "data": [
+            {"value": "Awake", "qty": 0.5, "date": "2026-06-08 23:00:00 +0000"},
+            {"value": "Core", "qty": 3.0, "date": "2026-06-08 23:30:00 +0000"},
+            {"value": "Deep", "qty": 1.5, "date": "2026-06-09 02:00:00 +0000"},
+            {"value": "REM", "qty": 2.0, "date": "2026-06-09 04:00:00 +0000"},
+            {"value": "In Bed", "qty": 8.0, "date": "2026-06-08 22:30:00 +0000"},
+        ]},
+    ]}}
+    rows = parse_payload(payload)
+    # Core 3 + Deep 1.5 + REM 2 = 6.5h asleep; Awake & In Bed excluded.
+    minutes = {r["day"]: r["sleep_minutes"] for r in rows}
+    total = sum(v for v in minutes.values() if v)
+    assert total == round(6.5 * 60)
+
+
+def test_daily_summary_sleep_still_works():
+    payload = {"data": {"metrics": [
+        {"name": "sleep_analysis", "units": "hr",
+         "data": [{"asleep": 7.5, "date": "2026-06-14 02:00:00 +0000"}]},
+    ]}}
+    rows = parse_payload(payload)
+    assert rows[0]["sleep_minutes"] == 450
+
+
+def test_overlapping_files_do_not_double_count(tmp_path):
+    """The same day in two files (a daily AND a weekly export) must not sum its
+    sleep / distance. The fuller value wins; it is never added together."""
+    from app.integrations.health_auto_export.parser import parse_folder
+
+    daily = {"data": {"metrics": [
+        {"name": "sleep_analysis", "units": "hr",
+         "data": [{"asleep": 5.0, "date": "2026-06-14 02:00:00 +0000"}]},
+        {"name": "walking_running_distance", "units": "km",
+         "data": [{"qty": 6.0, "date": "2026-06-14 18:00:00 +0000"}]},
+    ]}}
+    weekly = {"data": {"metrics": [
+        {"name": "sleep_analysis", "units": "hr",
+         "data": [{"asleep": 5.0, "date": "2026-06-14 02:00:00 +0000"}]},
+        {"name": "walking_running_distance", "units": "km",
+         "data": [{"qty": 6.3, "date": "2026-06-14 18:00:00 +0000"}]},
+    ]}}
+    (tmp_path / "DAILY-2026-06-14.json").write_text(json.dumps(daily))
+    (tmp_path / "WEEKLY-2026-24.json").write_text(json.dumps(weekly))
+
+    rows = {r["day"]: r for r in parse_folder(tmp_path)}
+    r = rows["2026-06-14"]
+    assert r["sleep_minutes"] == 300       # 5h, NOT 10h
+    assert r["distance_km"] == 6.3         # the larger of 6.0 / 6.3, NOT 12.3
+
+
 def test_parse_folder_handles_state_of_mind_array(tmp_path):
     # Some HAE categories emit a dedicated array rather than a named metric.
     from app.integrations.health_auto_export.parser import parse_folder
@@ -133,3 +263,39 @@ def test_parse_folder_handles_state_of_mind_array(tmp_path):
     (tmp_path / "StateOfMind.json").write_text(json.dumps(payload))
     rows = parse_folder(tmp_path)
     assert rows[0]["mood"] == 0.5  # mean(0.2, 0.8)
+
+
+def test_workout_export_imports_completed_workout_with_route(tmp_path):
+    from app.db.database import session_scope
+    from app.db.models import Workout
+    from app.integrations.health_auto_export.workouts import import_workouts_from_folder
+
+    payload = {"data": {"workouts": [{
+        "id": "W1",
+        "name": "Outdoor Run",
+        "start": "2026-06-24 18:26:45 +0100",
+        "end": "2026-06-24 18:57:46 +0100",
+        "duration": 1860.68,
+        "distance": {"qty": 4.003, "units": "km"},
+        "avgHeartRate": {"qty": 160.3, "units": "count/min"},
+        "maxHeartRate": {"qty": 175, "units": "count/min"},
+        "elevationUp": {"qty": 58.98, "units": "m"},
+        "isIndoor": False,
+        "location": "Outdoor",
+        "route": [
+            {"latitude": 55.8, "longitude": -4.02, "timestamp": "2026-06-24 18:26:45 +0100"},
+            {"latitude": 55.801, "longitude": -4.021, "timestamp": "2026-06-24 18:26:46 +0100"},
+        ],
+    }]}}
+    export_dir = tmp_path / "ORION"
+    export_dir.mkdir()
+    (export_dir / "ORION WORKOUT DATA-2026.json").write_text(json.dumps(payload))
+
+    with session_scope() as session:
+        assert import_workouts_from_folder(tmp_path, session, 1) == 1
+        row = session.query(Workout).filter_by(source="health_auto_export", source_id="W1").one()
+        assert row.sport_type == "run"
+        assert row.duration_seconds == 1861
+        assert row.distance_meters == 4003
+        assert round(row.average_heart_rate, 1) == 160.3
+        assert len(row.route_geometry) == 2

@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}ORION — Tasks{% endblock %}
+{% block heading %}Tasks{% endblock %}
+
+{% block statusline %}
+<div class="statusline" role="status">
+  <span>{{ counts.open }} open</span>
+  <span>{{ counts.done }} done</span>
+  <span>{{ counts.total }} mirrored</span>
+  <span>Supabase sync</span>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if sync_status == 'ok' %}
+<div class="toast">Synced {{ sync_count }} task{{ '' if sync_count == '1' else 's' }} from the tasks app.</div>
+{% elif sync_status == 'error' %}
+<div class="toast warning">Tasks backend could not be reached. Local changes are still queued.</div>
+{% endif %}
+
+<section class="panel hero tasks-hero">
+  <div class="tasks-hero-copy">
+    <span class="k">Companion tasks app</span>
+    <h1>{{ counts.open }} open loop{{ '' if counts.open == 1 else 's' }}</h1>
+    <p>Mirrored locally, edited here, and pushed back to the tasks web app on sync.</p>
+  </div>
+  <div class="tasks-hero-actions">
+    <form method="post" action="/tasks/sync">
+      <button type="submit" class="primary">Sync tasks</button>
+    </form>
+  </div>
+</section>
+
+<section class="panel task-composer-panel">
+  <h2>Quick add</h2>
+  <form method="post" action="/tasks" class="task-composer">
+    <label class="task-title-field">Task
+      <input type="text" name="title" placeholder="Add a task..." maxlength="400" required>
+    </label>
+    <label>Area
+      <input type="text" name="area" placeholder="Health, Uni, Work">
+    </label>
+    <label>Priority
+      <select name="priority">
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+        <option value="low">Low</option>
+      </select>
+    </label>
+    <label>Due
+      <input type="date" name="due_date">
+    </label>
+    <label class="task-notes-field">Notes
+      <input type="text" name="notes" placeholder="Context, link, next action">
+    </label>
+    <button type="submit" class="primary">Add task</button>
+  </form>
+</section>
+
+{% if open_tasks %}
+<section class="tasks-board" aria-label="Open tasks">
+  {% for area, items in grouped_tasks.items() %}
+  <article class="task-group panel-lite">
+    <div class="section-head">
+      <div>
+        <span class="training-eyebrow">Area</span>
+        <h2>{{ area }}</h2>
+      </div>
+      <span class="task-count">{{ items | length }}</span>
+    </div>
+    <div class="task-list">
+      {% for task in items %}
+      <article class="task-row priority-{{ task.priority }}">
+        <form method="post" action="/tasks/{{ task.id }}/complete">
+          <button type="submit" name="done" value="1" class="task-check" aria-label="Complete {{ task.title }}"></button>
+        </form>
+        <div class="task-main">
+          <strong>{{ task.title }}</strong>
+          <p>
+            {{ task.priority | title }}
+            {% if task.due_date %} · due {{ task.due_date.strftime('%d %b') }}{% endif %}
+            {% if task.dirty %} · queued{% endif %}
+          </p>
+          {% if task.notes %}<small>{{ task.notes }}</small>{% endif %}
+        </div>
+        <form method="post" action="/tasks/{{ task.id }}/delete">
+          <button type="submit" class="text-button danger">Delete</button>
+        </form>
+      </article>
+      {% endfor %}
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% else %}
+<section class="panel empty-fitness">
+  <strong>No open tasks mirrored yet.</strong>
+  <p>Sync the companion tasks app to pull your current list, or add a task here and it will push back on the next sync.</p>
+  <form method="post" action="/tasks/sync">
+    <button type="submit" class="primary">Sync tasks</button>
+  </form>
+</section>
+{% endif %}
+
+{% if done_tasks %}
+<section class="panel-lite completed-tasks">
+  <div class="section-head">
+    <div>
+      <span class="training-eyebrow">Archive</span>
+      <h2>Completed</h2>
+    </div>
+    <span class="task-count">{{ done_tasks | length }}</span>
+  </div>
+  <div class="task-list compact">
+    {% for task in done_tasks[:30] %}
+    <article class="task-row done">
+      <form method="post" action="/tasks/{{ task.id }}/complete">
+        <button type="submit" name="done" value="" class="task-check" aria-label="Reopen {{ task.title }}"></button>
+      </form>
+      <div class="task-main">
+        <strong>{{ task.title }}</strong>
+        <p>{{ task.area }}{% if task.completed_at %} · {{ task.completed_at.strftime('%d %b') }}{% endif %}</p>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

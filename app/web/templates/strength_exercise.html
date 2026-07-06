@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}ORION — {{ detail.exercise.name }}{% endblock %}
+{% block heading %}Exercise{% endblock %}
+{% block statusline %}
+<div class="statusline"><span>{{ detail.exercise.primary }}</span><span>{{ detail.exercise.equipment }}</span><span>{{ detail.sessions }} sessions</span></div>
+{% endblock %}
+{% block content %}
+<section class="panel hero">
+  <div class="strength-command">
+    <div>
+      <span class="k">{{ detail.exercise.equipment }} · {{ detail.exercise.movement }}</span>
+      <h1>{{ detail.exercise.name }}</h1>
+      <p>{{ detail.last_performed }} · {{ detail.aim }}</p>
+    </div>
+    <form method="post" action="/strength/exercises/{{ detail.exercise.id }}/favorite">
+      <button class="ghost" type="submit">{{ '★' if detail.exercise.favorite else '☆' }}</button>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Performance</h2>
+  <div class="stat-grid">
+    <div class="stat"><div class="n">{{ detail.sessions }}</div><div class="l">Sessions</div></div>
+    <div class="stat"><div class="n">{{ '%.1f' % detail.top_set }}</div><div class="l">Top set kg</div></div>
+    <div class="stat"><div class="n">{{ '%.1f' % detail.best_e1rm }}</div><div class="l">Best e1RM kg</div></div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Trends</h2>
+  {% if detail.volume_points %}
+  <div class="trend-card">
+    <span>Volume trend</span>
+    <svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline points="{{ spark(detail.volume_points) }}"></polyline></svg>
+  </div>
+  <div class="trend-card">
+    <span>Estimated 1RM trend</span>
+    <svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline points="{{ spark(detail.e1rm_points) }}"></polyline></svg>
+  </div>
+  {% else %}
+  <p class="hint">No previous data yet. Set your baseline today.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Previous workouts</h2>
+  {% if detail.workouts %}
+  <div class="history-list">
+    {% for w in detail.workouts %}
+    <a class="history-card" href="/strength/workout/{{ w.id }}">
+      <span class="date">{{ w.date_label }}</span>
+      <b>{{ w.name }}</b>
+      <span>{{ '%.0f' % w.volume }}kg · top {{ '%.1f' % w.top_set }}kg · {{ '%.1f' % w.e1rm }}kg e1RM</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="hint">No saved sessions for this exercise yet.</p>
+  {% endif %}
+</section>
+{% endblock %}
