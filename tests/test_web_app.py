@@ -106,7 +106,7 @@ def test_pwa_assets_are_served_without_login(client: TestClient):
     worker = client.get("/service-worker.js")
     assert worker.status_code == 200
     assert worker.headers["service-worker-allowed"] == "/"
-    assert "orion-static-v6" in worker.text
+    assert "orion-static-v7" in worker.text
 
 
 def test_pages_require_login(client: TestClient):

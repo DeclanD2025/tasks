@@ -311,24 +311,37 @@ function make(tag, className, text) {
 
 // ------------------------------------------------------------ more sheet
 (function moreSheet() {
+  function close() {
+    const sheet = qs("#more-sheet");
+    const backdrop = qs("[data-sheet-backdrop]");
+    if (sheet) sheet.hidden = true;
+    if (backdrop) backdrop.hidden = true;
+    qs("[data-more-toggle]")?.setAttribute("aria-expanded", "false");
+  }
+
   document.addEventListener("click", (event) => {
     const toggle = event.target.closest?.("[data-more-toggle]");
-    const backdrop = qs("[data-sheet-backdrop]");
     const sheet = qs("#more-sheet");
+    const backdrop = qs("[data-sheet-backdrop]");
     if (!sheet || !backdrop) return;
+
     if (toggle) {
-      const open = sheet.hidden;
+      const open = sheet.hidden;  // opening now?
       sheet.hidden = !open;
       backdrop.hidden = !open;
       toggle.setAttribute("aria-expanded", String(open));
       return;
     }
-    if (!sheet.hidden && (event.target === backdrop || !event.target.closest("#more-sheet"))) {
-      sheet.hidden = true;
-      backdrop.hidden = true;
-      qs("[data-more-toggle]")?.setAttribute("aria-expanded", "false");
-    }
+    // A tap on the backdrop, or anywhere that isn't inside the open sheet,
+    // dismisses it. Links inside the sheet navigate and are left alone.
+    if (!sheet.hidden && !event.target.closest("#more-sheet")) close();
   });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") close();
+  });
+  // Safety net: never let the sheet survive a page transition.
+  window.addEventListener("pageshow", close);
 })();
 
 // ---------------------------------------------------------- detail drawer
