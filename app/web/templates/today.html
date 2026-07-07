@@ -99,16 +99,25 @@
   {% endif %}
 </section>
 
+{% if insights %}
+<section class="panel">
+  <h2>Findings</h2>
+  {{ ui.insight_queue(insights) }}
+</section>
+{% endif %}
+
+<span class="section-eyebrow">Jump into your day</span>
 <div class="today-cards">
+  {# Readiness + training rec already lead the hero above — this card carries
+     the underlying vitals instead of repeating the score. #}
   <a class="domain-card tappable" href="/health">
     <span class="dc-head"><span>Body telemetry</span><span>›</span></span>
-    <span class="dc-main">{{ snap.score_label }}{% if snap.estimated %} <small>estimated</small>{% endif %}</span>
-    <span class="dc-sub">{{ snap.training_recommendation }}</span>
-    <span class="dc-row">
-      {% for m in signals.primary[:3] %}
+    <span class="dc-row wide">
+      {% for m in signals.primary[:4] %}
       <span class="m"><b>{{ m.value }}</b><span>{{ m.label }}</span></span>
       {% endfor %}
     </span>
+    <span class="dc-sub">Sleep, heart and recovery signals behind today's readiness.</span>
   </a>
 
   <a class="domain-card tappable" href="/training">
@@ -149,9 +158,4 @@
     {% endif %}
   </a>
 </div>
-
-<section class="panel">
-  <h2>Findings</h2>
-  {{ ui.insight_queue(insights) }}
-</section>
 {% endblock %}

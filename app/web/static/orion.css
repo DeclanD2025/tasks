@@ -637,6 +637,10 @@ nav.dock a.active::before {
   box-shadow: 0 0 8px rgba(138, 230, 255, 0.7);
 }
 nav.dock a:active { color: var(--text); }
+/* Secondary tabs + divider live in the dock markup but only show on the
+   desktop rail (see the >=940px block); on mobile the "More" sheet owns them.
+   Specificity must beat `nav.dock a` (0-2-0), hence the nav.dock prefix. */
+nav.dock .dock-more-link, nav.dock .dock-divider { display: none; }
 
 /* ---------------------------------------------------------------- stoic */
 .maxim {
@@ -2654,6 +2658,27 @@ details.session .set { font-family: var(--font-mono); font-size: 12px; color: va
   nav.dock a.active::before {
     top: 9px; bottom: 9px; left: -14px; right: auto; width: 2px; height: auto;
   }
+  /* Desktop rail lists every tab directly — no "More" popup, no repeated brand.
+     Selectors are specificity-bumped to beat the base .dock .more-btn and
+     .masthead .brand rules that sit later in the sheet. */
+  nav.dock .more-btn { display: none; }
+  .masthead .brand.masthead-brand { display: none; }
+  nav.dock .dock-more-link {
+    display: flex; position: relative;
+    min-height: 42px; flex-direction: row; justify-content: flex-start; align-items: center;
+    gap: 12px; padding: 9px 11px; border-radius: 8px; flex: none;
+    color: var(--text-3);
+  }
+  nav.dock .dock-divider { display: block; }
+  .dock-more-link .i { width: 20px; text-align: center; }
+  .dock-more-link .t { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; }
+  .dock-more-link:hover { color: var(--text-2); background: rgba(255,255,255,0.03); }
+  .dock-more-link.active { color: var(--text); background: rgba(255,255,255,0.055); border: 1px solid var(--line); }
+  .dock-more-link.active::before {
+    content: ""; position: absolute; top: 9px; bottom: 9px; left: -14px; width: 2px;
+    background: var(--accent); border-radius: 1px; box-shadow: 0 0 8px rgba(138,230,255,0.7);
+  }
+  .dock-divider { height: 1px; margin: 8px 6px; background: var(--line); }
   .sync-status, .rest-pill {
     left: calc(var(--dock-w) + (100vw - var(--dock-w)) / 2);
   }
@@ -3057,8 +3082,15 @@ a.card-link { text-decoration: none; color: inherit; display: block; }
 .status-strip .sv small { color: var(--text-3); font-weight: 400; font-size: 11.5px; }
 .status-strip .sv.dim { color: var(--text-3); font-weight: 400; }
 
+.section-eyebrow {
+  display: block; margin: 4px 2px 10px;
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--text-3);
+}
 .today-cards { display: grid; gap: 12px; grid-template-columns: 1fr; }
 @media (min-width: 700px) { .today-cards { grid-template-columns: 1fr 1fr; } }
+/* The Body Telemetry vitals row wraps its 4 signals evenly. */
+.dc-row.wide { flex-wrap: wrap; gap: 10px 18px; }
 .domain-card {
   position: relative; display: block; text-align: left; width: 100%;
   background: var(--surface-0); border: 1px solid var(--line);

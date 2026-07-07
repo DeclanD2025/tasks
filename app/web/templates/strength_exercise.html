@@ -32,11 +32,13 @@
   {% if detail.volume_points %}
   <div class="trend-card">
     <span>Volume trend</span>
-    <svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline points="{{ spark(detail.volume_points) }}"></polyline></svg>
+    <svg class="spark-svg" viewBox="0 0 100 28" preserveAspectRatio="none"
+         data-spark="{{ detail.volume_points | join(',') }}" data-spark-kind="accent"><polyline points="{{ spark(detail.volume_points) }}"></polyline></svg>
   </div>
   <div class="trend-card">
     <span>Estimated 1RM trend</span>
-    <svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline points="{{ spark(detail.e1rm_points) }}"></polyline></svg>
+    <svg class="spark-svg" viewBox="0 0 100 28" preserveAspectRatio="none"
+         data-spark="{{ detail.e1rm_points | join(',') }}" data-spark-kind="good"><polyline points="{{ spark(detail.e1rm_points) }}"></polyline></svg>
   </div>
   {% else %}
   <p class="hint">No previous data yet. Set your baseline today.</p>

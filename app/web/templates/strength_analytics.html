@@ -41,7 +41,8 @@
     {% for row in snap.progressions %}
     <div class="finding">
       <div class="head"><b>{{ row.exercise }}</b><span class="pill {{ 'positive' if row.delta >= 0 else 'warning' }}">{{ '%+.1f' % row.delta }}</span></div>
-      <svg viewBox="0 0 100 28" preserveAspectRatio="none"><polyline points="{{ spark(row.points) }}"></polyline></svg>
+      <svg class="spark-svg" viewBox="0 0 100 28" preserveAspectRatio="none"
+           data-spark="{{ row.points | join(',') }}" data-spark-kind="{{ 'good' if row.delta >= 0 else 'warn' }}"><polyline points="{{ spark(row.points) }}"></polyline></svg>
     </div>
     {% endfor %}
   </div>

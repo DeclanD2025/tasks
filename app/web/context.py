@@ -36,7 +36,8 @@ NAV_DOCK = [
     ("mind", "/mind", "Mind"),
 ]
 NAV_MORE = [
-    ("routes", "/routes", "Route Atlas", "Mapped runs, attempts, bests"),
+    # Route Atlas (/routes) is a running sub-view, reached from Train → Run Plan,
+    # not a top-level tab — intentionally omitted here. The page still exists.
     ("calendar", "/calendar", "Calendar", "Week orbit, load, holidays"),
     ("tasks", "/tasks", "Tasks", "Open loops, synced"),
     ("money", "/money", "Money", "Position, runway, currency"),

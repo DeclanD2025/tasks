@@ -1412,8 +1412,21 @@ def build_operating_insights(
 
     insights: list[OperatingInsight] = []
     for change in recovery.changes[:3]:
-        severity = "warning" if "elevated" in change or "down" in change else "info"
-        insights.append(OperatingInsight("Recovery drift", change, severity, "Recovery", recovery.recommendation, recovery.data_quality))
+        # The direction words carry good/bad: "up"/"lower" are favourable moves,
+        # "down"/"elevated" are adverse. Title, severity and action must match —
+        # a positive change should never read as "Recovery drift · keep intensity low".
+        adverse = " down " in change or "elevated" in change
+        favourable = " up " in change or "lower" in change
+        if adverse:
+            title, severity = "Recovery drift", "warning"
+            action = recovery.recommendation
+        elif favourable:
+            title, severity = "Recovery improving", "info"
+            action = "A favourable shift — hold the habits that produced it."
+        else:
+            title, severity = "Recovery signal", "info"
+            action = recovery.recommendation
+        insights.append(OperatingInsight(title, change, severity, "Recovery", action, recovery.data_quality))
     if run_plan.week_distance_km > run_plan.weekly_target_km * 1.15:
         insights.append(OperatingInsight("Running volume jump", "This week's running distance is above the guardrail.", "warning", "Run Plan", "Make the next run easy or skip intensity.", "medium"))
     elif run_plan.week_distance_km < run_plan.weekly_target_km * 0.35:

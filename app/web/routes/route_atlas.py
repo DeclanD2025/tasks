@@ -49,7 +49,9 @@ def atlas(request: Request):
     return page(
         request,
         "routes.html",
-        "routes",
+        # Route Atlas lives under the running/training area, so the Train tab
+        # stays lit while browsing it.
+        "training",
         routes=all_routes,
         workouts=_workout_map(uid),
         format_pace=routes.format_pace,
@@ -78,7 +80,7 @@ def route_detail(request: Request, route_id: int):
     return page(
         request,
         "route_detail.html",
-        "routes",
+        "training",
         dash=dashboard,
         route=dashboard.route,
         pace_series=pace_series,
