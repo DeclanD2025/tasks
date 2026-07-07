@@ -69,9 +69,30 @@ def _mind_page(request: Request, *, phase: str = "", saved: str = ""):
     )
 
 
+def _mind_flow(request: Request, *, phase: str):
+    uid = user_id()
+    snapshot = personal_os.get_mind_snapshot(uid)
+    return page(
+        request,
+        "mind_flow.html",
+        "mind",
+        immersive=True,
+        snap=snapshot,
+        phase=phase,
+        mindfulness_types=personal_os.MINDFULNESS_TYPES,
+        mood_factors=MOOD_FACTORS,
+        scale_labels=SCALE_LABELS,
+    )
+
+
 @router.get("/mind", response_class=HTMLResponse)
 def mind(request: Request, phase: str = "", saved: str = ""):
     return _mind_page(request, phase=phase, saved=saved)
+
+
+@router.get("/mind/morning", response_class=HTMLResponse)
+def mind_morning_flow(request: Request):
+    return _mind_flow(request, phase="morning")
 
 
 @router.post("/mind/morning")
@@ -103,6 +124,11 @@ def mind_morning(
 
     result = apply_client_mutation(uid, client_mutation_id, "mind.morning", apply)
     return write_response(request, "/mind?phase=morning&saved=morning", result)
+
+
+@router.get("/mind/evening", response_class=HTMLResponse)
+def mind_evening_flow(request: Request):
+    return _mind_flow(request, phase="evening")
 
 
 @router.post("/mind/evening")

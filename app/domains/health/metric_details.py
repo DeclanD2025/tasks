@@ -313,6 +313,31 @@ def _rolling(series: list[dict], window: int) -> list[dict]:
     return out
 
 
+def _typical_band(values: list[float]) -> list[float] | None:
+    """The user's own habitual range: the interquartile band of recent points.
+
+    Honest and personal — the shaded zone shows where this body usually sits,
+    not a clinical reference range. Needs enough points to be meaningful.
+    """
+    recent = values[-45:]
+    if len(recent) < 8:
+        return None
+    ordered = sorted(recent)
+    n = len(ordered)
+
+    def pct(p: float) -> float:
+        idx = p * (n - 1)
+        lo = int(idx)
+        frac = idx - lo
+        hi = min(lo + 1, n - 1)
+        return ordered[lo] + (ordered[hi] - ordered[lo]) * frac
+
+    lo, hi = pct(0.25), pct(0.75)
+    if hi <= lo:
+        return None
+    return [round(lo, 2), round(hi, 2)]
+
+
 def get_metric_detail(uid: int, kind: str, days: int = 90) -> dict | None:
     """The full drilldown payload for one metric, or None for unknown kinds."""
     spec = METRIC_SPECS.get(kind)
@@ -367,6 +392,7 @@ def get_metric_detail(uid: int, kind: str, days: int = 90) -> dict | None:
         "rolling7": _rolling(series, 7) if len(series) >= 5 else [],
         "baseline7": baseline7,
         "baseline30": baseline30,
+        "band": _typical_band(values),
         "lower_better": spec.lower_better,
         "decimals": spec.decimals,
         "meaning": spec.meaning,

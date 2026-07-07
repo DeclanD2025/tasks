@@ -43,6 +43,10 @@
       <span class="name">{{ v.name }}</span>
       <span class="greek">{{ v.greek }}</span>
       <div class="score">{{ v.display }}{% if v.has_data %}<small> /100</small>{% endif %}</div>
+      <div class="virtue-meter {{ '' if v.has_data else 'empty' }}" role="progressbar"
+           aria-valuenow="{{ '%.0f' % v.score if v.has_data else 0 }}" aria-valuemin="0" aria-valuemax="100">
+        <i style="width: {{ '%.0f' % v.score if v.has_data else 3 }}%"></i>
+      </div>
       <div class="note">{{ v.note }}</div>
       {% if v.key == 'wisdom' %}
       <svg class="motif" viewBox="0 0 64 64" aria-hidden="true">

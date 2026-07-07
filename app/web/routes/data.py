@@ -34,7 +34,7 @@ from app.db.models import (
     Workout,
     WorkoutSessionLog,
 )
-from app.domains import personal_os
+from app.domains import personal_os, settings_service
 from app.domains.fitness import gpx
 from app.integrations.external_signals import signal_status
 from app.integrations.health_auto_export.ingest import apply_payload
@@ -85,6 +85,10 @@ def _user_rows(session, model, uid: int):
 
 @router.get("/data", response_class=HTMLResponse)
 def data(request: Request, imported: str = ""):
+    return _data_page(request, imported=imported)
+
+
+def _data_page(request: Request, imported: str = "", generated_hae_token: str = ""):
     uid = user_id()
     snapshot = personal_os.get_data_inventory(uid)
     with session_scope() as s:
@@ -104,7 +108,11 @@ def data(request: Request, imported: str = ""):
         table_counts=counts,
         signals=signal_status(),
         import_report=report,
-        ingest_configured=bool(os.environ.get("ORION_INGEST_TOKEN")),
+        ingest_configured=(
+            bool(os.environ.get("ORION_INGEST_TOKEN"))
+            or settings_service.hae_ingest_token_configured(uid)
+        ),
+        generated_hae_token=generated_hae_token,
     )
 
 
@@ -132,6 +140,12 @@ async def data_import(file: UploadFile = File(...)):
         report = {"kind": "unknown", "ok": False,
                   "error": "Unsupported file type — use HAE .json, .gpx, or .csv."}
     return RedirectResponse(f"/data?imported={json.dumps(report)}", status_code=303)
+
+
+@router.post("/data/hae-token", response_class=HTMLResponse)
+def generate_hae_token(request: Request):
+    token = settings_service.generate_hae_ingest_token(user_id())
+    return _data_page(request, generated_hae_token=token)
 
 
 def _import_health_csv(uid: int, raw: bytes) -> dict:
@@ -238,17 +252,20 @@ def export_workout_gpx(workout_id: int):
 # token so the HAE iOS app can push exports directly to a deployed ORION.
 @router.post("/api/ingest/hae")
 async def ingest_hae(request: Request):
+    uid = user_id()
     expected = os.environ.get("ORION_INGEST_TOKEN", "")
-    if not expected:
+    if not expected and not settings_service.hae_ingest_token_configured(uid):
         return JSONResponse(
             {"status": "disabled",
-             "detail": "Set ORION_INGEST_TOKEN to enable HAE push ingest."},
+             "detail": "Set ORION_INGEST_TOKEN or generate a token in Data Vault."},
             status_code=403,
         )
     supplied = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     if not supplied:
         supplied = request.query_params.get("token", "")
-    if not hmac.compare_digest(supplied, expected):
+    env_ok = bool(expected) and hmac.compare_digest(supplied, expected)
+    db_ok = settings_service.verify_hae_ingest_token(uid, supplied)
+    if not (env_ok or db_ok):
         return JSONResponse({"status": "unauthorised"}, status_code=401)
     try:
         payload = await request.json()
@@ -256,6 +273,6 @@ async def ingest_hae(request: Request):
         return JSONResponse({"status": "error", "detail": "Body must be JSON."},
                             status_code=400)
     with session_scope() as s:
-        report = apply_payload(s, user_id(), payload)
+        report = apply_payload(s, uid, payload)
     return JSONResponse({"status": "ok" if report["ok"] else "error", **report},
                         status_code=200 if report["ok"] else 400)

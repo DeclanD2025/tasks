@@ -130,6 +130,10 @@ ships a production `Dockerfile` for container hosts (Fly.io / Railway /
 Render) with a persistent volume. Static hosts like Netlify cannot run a
 stateful Python server — the doc explains the equivalents that can.
 
+Health Auto Export can push into the web app at `POST /api/ingest/hae`. Enable
+it with `ORION_INGEST_TOKEN` on the host, or log in to Data Vault and generate
+a database-backed HAE token after deployment.
+
 ---
 
 ## Architecture

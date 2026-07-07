@@ -203,14 +203,25 @@ async function submitQueuedForm(form) {
   }
 }
 
-// Keep range sliders and their numeric readouts in sync.
+function syncRangeInput(input) {
+  const value = Number(input.value || input.min || 0);
+  const min = Number(input.min || 0);
+  const max = Number(input.max || 100);
+  const output = input.closest(".range-row, .focus-range-field")?.querySelector("output");
+  const label = input.closest(".focus-range-field")?.querySelector(".focus-range-readout b");
+  const pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
+  input.style.setProperty("--range-pct", `${pct}%`);
+  if (output) output.value = input.value;
+  if (label) label.textContent = input.getAttribute(`data-label-${input.value}`) || "";
+}
+
+// Keep range sliders and their readouts in sync.
 document.addEventListener("input", (event) => {
   const input = event.target;
-  if (input instanceof HTMLInputElement && input.type === "range") {
-    const output = input.closest(".range-row")?.querySelector("output");
-    if (output) output.value = input.value;
-  }
+  if (input instanceof HTMLInputElement && input.type === "range") syncRangeInput(input);
 });
+
+document.querySelectorAll('input[type="range"]').forEach(syncRangeInput);
 
 document.addEventListener("submit", (event) => {
   const form = event.target;
@@ -419,8 +430,12 @@ const Drawer = (() => {
       const chart = make("div", "d-chart");
       container.appendChild(chart);
       window.OrionCharts.lineChart(chart, detail.series, {
+        kind: detail.kind,
+        unit: detail.unit,
         rolling: detail.rolling7,
         baseline: detail.baseline30,
+        band: detail.band,
+        lower_better: detail.lower_better,
         decimals: detail.decimals,
         bars: detail.kind === "training_load" || detail.kind === "mindfulness",
       });
@@ -612,6 +627,48 @@ document.addEventListener("DOMContentLoaded", () => {
     .then((weather) => { if (weather?.ok) Drawer.updatePill(weather); })
     .catch(() => {});
 });
+
+// ----------------------------------------------- vital sparkline enhancement
+// Upgrade the server-rendered fallback sparklines into toned gradient charts.
+// Purely progressive: no JS → the flat polyline still renders honestly.
+(function sparklines() {
+  function enhance(root) {
+    if (!window.OrionCharts?.vitalSparkline) return;
+    (root || document).querySelectorAll("svg.spark-svg[data-spark]").forEach((svg) => {
+      if (svg.dataset.enhanced) return;
+      const values = svg.dataset.spark.split(",").map(Number).filter((n) => !Number.isNaN(n));
+      if (values.length < 2) return;
+      const chart = window.OrionCharts.vitalSparkline(values, svg.dataset.sparkKind || "");
+      chart.classList.add("spark-svg");
+      chart.dataset.enhanced = "1";
+      svg.replaceWith(chart);
+    });
+  }
+  document.addEventListener("DOMContentLoaded", () => enhance());
+  // Re-enhance after HTMX/queue swaps re-render metric cards.
+  document.body?.addEventListener?.("htmx:afterSwap", (e) => enhance(e.target));
+})();
+
+// ------------------------------------------- trend charts (Stoic/Mind trends)
+// Render [data-trend] containers into toned trend charts from a bare number[].
+(function trends() {
+  function enhance(root) {
+    if (!window.OrionCharts?.trendChart) return;
+    (root || document).querySelectorAll("[data-trend]").forEach((box) => {
+      if (box.dataset.trendDone) return;
+      const scale = Number(box.dataset.trendScale || 1);
+      const values = box.dataset.trend.split(",").map(Number)
+        .filter((n) => !Number.isNaN(n)).map((n) => n * scale);
+      window.OrionCharts.trendChart(box, values, {
+        kind: box.dataset.trendKind || "accent",
+        unit: box.dataset.trendUnit || "",
+        decimals: Number(box.dataset.trendDecimals || 0),
+      });
+      box.dataset.trendDone = "1";
+    });
+  }
+  document.addEventListener("DOMContentLoaded", () => enhance());
+})();
 
 // ------------------------------------------------------- scale label hints
 document.addEventListener("change", (event) => {

@@ -81,6 +81,7 @@ image instead of >1 GB). What every platform needs:
 | TLS | platform provides HTTPS; set `ORION_WEB_SECURE=1` for secure cookies + HSTS |
 | Port | 8321 |
 | Health check | `GET /healthz` |
+| HAE push | Either set `ORION_INGEST_TOKEN`, or log in and generate a token from Data Vault |
 
 ### Fly.io walkthrough
 
@@ -125,6 +126,16 @@ Keeping it fresh afterwards: either re-upload periodically, or keep the Mac
 as the source of truth and treat the deployed copy as a read-mostly mirror.
 There is deliberately no automatic cloud sync — that keeps the data path
 auditable.
+
+Health Auto Export can push directly into the web app. If you did not set
+`ORION_INGEST_TOKEN` as a host secret, open Data Vault in the deployed app and
+use **Generate HAE token**. Configure Health Auto Export's REST automation with:
+
+```text
+POST https://<app>.fly.dev/api/ingest/hae
+Authorization: Bearer <generated token>
+Content-Type: application/json
+```
 
 ### Railway / Render
 

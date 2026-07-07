@@ -1,5 +1,5 @@
-const STATIC_CACHE = "orion-static-v7";
-const PAGE_CACHE = "orion-pages-v7";
+const STATIC_CACHE = "orion-static-v10";
+const PAGE_CACHE = "orion-pages-v10";
 const STATIC_ASSETS = [
   "/static/orion.css",
   "/static/orion.js",

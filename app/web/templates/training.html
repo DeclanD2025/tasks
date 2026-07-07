@@ -34,9 +34,10 @@
     </div>
   </div>
   <div class="training-today-action">
-    <a class="btn primary fitness-cta" href="/run">Start run</a>
+    <a class="btn primary fitness-cta" href="/run">View running plan</a>
     <a class="btn ghost fitness-cta secondary" href="/strength/start">Start strength workout</a>
   </div>
+  <p class="training-import-note">Runs import automatically from Apple Health — there's nothing to start here.</p>
 </section>
 
 <section class="training-support" aria-label="Training snapshot">
@@ -98,62 +99,7 @@
     <i style="width: {{ '%.0f' % block_progress }}%"></i>
   </div>
 
-  <div class="plan-workbench">
-    <form method="post" action="/training/plan" class="plan-editor">
-      <label>Block
-        <input type="text" name="block_name" value="{{ plan.block_name }}" maxlength="120">
-      </label>
-      <label>Purpose
-        <input type="text" name="purpose" value="{{ plan.purpose }}" maxlength="120" placeholder="Build base, sharpen speed, return from injury">
-      </label>
-      <label>Focus
-        <select name="focus">
-          {% for key, label in plan_focuses.items() %}
-          <option value="{{ key }}" {{ 'selected' if plan.focus == key }}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Start
-        <input type="date" name="start_date" value="{{ plan.start_date.isoformat() }}">
-      </label>
-      <label>Weeks
-        <input type="number" name="weeks" min="1" max="52" value="{{ plan.weeks }}">
-      </label>
-      <label class="span-2">Goal
-        <input type="text" name="goal" value="{{ plan.goal }}" placeholder="The outcome this block is protecting">
-      </label>
-      <button type="submit" class="btn ghost secondary">Update block</button>
-    </form>
-
-    <form method="post" action="/training/plan/session" class="session-composer">
-      <div>
-        <span class="training-eyebrow">Add session</span>
-        <h3>Plan the next training move</h3>
-        <p>Choose the day, stimulus, and intent. ORION will keep the week readable.</p>
-      </div>
-      <label>Day
-        <select name="day">
-          {% for day in plan_days %}
-          <option value="{{ day.isoformat() }}" {{ 'selected' if day == plan_today }}>{{ day.strftime('%a %d %b') }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Session
-        <select name="session_type">
-          {% for card in palette %}
-          <option value="{{ card.key }}">{{ card.title }} · {{ card.duration_min }} min · {{ card.intensity }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Label
-        <input type="text" name="label" maxlength="60" placeholder="Long run, push day, easy engine">
-      </label>
-      <label>Notes
-        <input type="text" name="notes" placeholder="Route, target pace, exercises, constraints">
-      </label>
-      <button type="submit" class="btn primary">Add to plan</button>
-    </form>
-  </div>
+  {% if plan.purpose %}<p class="plan-purpose">{{ plan.purpose }}{% if plan.goal %} · protecting <b>{{ plan.goal }}</b>{% endif %}</p>{% endif %}
 
   <div class="week-plan" aria-label="This week's planned training">
     {% for day in plan_days %}
@@ -182,6 +128,66 @@
     </article>
     {% endfor %}
   </div>
+
+  <details class="plan-workbench-toggle">
+    <summary><span class="h">Edit block &amp; add sessions</span><span class="n">plan tools</span></summary>
+    <div class="plan-workbench">
+      <form method="post" action="/training/plan" class="plan-editor">
+        <label>Block
+          <input type="text" name="block_name" value="{{ plan.block_name }}" maxlength="120">
+        </label>
+        <label>Purpose
+          <input type="text" name="purpose" value="{{ plan.purpose }}" maxlength="120" placeholder="Build base, sharpen speed, return from injury">
+        </label>
+        <label>Focus
+          <select name="focus">
+            {% for key, label in plan_focuses.items() %}
+            <option value="{{ key }}" {{ 'selected' if plan.focus == key }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Start
+          <input type="date" name="start_date" value="{{ plan.start_date.isoformat() }}">
+        </label>
+        <label>Weeks
+          <input type="number" name="weeks" min="1" max="52" value="{{ plan.weeks }}">
+        </label>
+        <label class="span-2">Goal
+          <input type="text" name="goal" value="{{ plan.goal }}" placeholder="The outcome this block is protecting">
+        </label>
+        <button type="submit" class="btn ghost secondary">Update block</button>
+      </form>
+
+      <form method="post" action="/training/plan/session" class="session-composer">
+        <div>
+          <span class="training-eyebrow">Add session</span>
+          <h3>Plan the next training move</h3>
+          <p>Choose the day, stimulus, and intent. ORION will keep the week readable.</p>
+        </div>
+        <label>Day
+          <select name="day">
+            {% for day in plan_days %}
+            <option value="{{ day.isoformat() }}" {{ 'selected' if day == plan_today }}>{{ day.strftime('%a %d %b') }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Session
+          <select name="session_type">
+            {% for card in palette %}
+            <option value="{{ card.key }}">{{ card.title }} · {{ card.duration_min }} min · {{ card.intensity }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Label
+          <input type="text" name="label" maxlength="60" placeholder="Long run, push day, easy engine">
+        </label>
+        <label>Notes
+          <input type="text" name="notes" placeholder="Route, target pace, exercises, constraints">
+        </label>
+        <button type="submit" class="btn primary">Add to plan</button>
+      </form>
+    </div>
+  </details>
 </section>
 
 <section class="recent-training panel-lite">

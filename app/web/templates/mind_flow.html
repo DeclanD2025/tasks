@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}ORION - {{ 'Morning Brief' if phase == 'morning' else 'Evening Reflection' }}{% endblock %}
+{% block heading %}{% endblock %}
+
+{% block content %}
+{% set t = snap.today or {} %}
+{% set evening_done = t and (t.get('evening_note') or '') | trim %}
+
+<div class="mind-focus-shell" aria-label="{{ 'Morning brief' if phase == 'morning' else 'Evening reflection' }}">
+  <a class="focus-close" href="/mind?phase={{ phase }}" aria-label="Back to Mind">Back</a>
+
+  {% if phase == 'morning' %}
+  <section class="focus-cover">
+    <span class="eyebrow">Morning brief · 60 seconds</span>
+    <h1>{{ 'All set for the morning.' if t.get('intention') else 'Begin the day.' }}</h1>
+    <p>You have power over your mind, not outside events. Realize this, and you will find strength. · Marcus Aurelius</p>
+  </section>
+
+  <form method="post" action="/mind/morning" class="mind-focus-form" data-offline-queue data-offline-label="morning brief">
+    {% for field, label, default in [
+      ('sleep_quality', 'How well did you sleep?', 5),
+      ('mood', 'How are you feeling?', 5),
+      ('energy', 'How much energy do you feel?', 5),
+      ('anxiety', 'How loud is anxiety?', 3)] %}
+    <section class="focus-step">
+      {% set current = t.get(field, default) %}
+      {% set labels = scale_labels.get(field) %}
+      <label class="focus-range-field">{{ label }}
+        <span class="focus-range-readout">
+          <output>{{ current }}</output>
+          {% if labels %}<b>{{ labels.get(current, '') }}</b>{% endif %}
+        </span>
+        <input type="range" name="{{ field }}" min="1" max="10" step="1" value="{{ current }}"
+          {% if labels %}{% for n, text in labels.items() %} data-label-{{ n }}="{{ text }}"{% endfor %}{% endif %}>
+      </label>
+      {% if labels %}
+      <div class="scale-ends" aria-hidden="true"><span>{{ labels.get(1, '') }}</span><span>{{ labels.get(10, '') }}</span></div>
+      {% endif %}
+    </section>
+    {% endfor %}
+
+    <section class="focus-step">
+      <fieldset class="plain-fieldset">
+        <legend class="f">What's influencing today?</legend>
+        <div class="chips editorial-chips">
+          {% for factor in mood_factors %}
+          <label><input type="checkbox" name="factors" value="{{ factor }}"
+            {{ 'checked' if factor in (t.get('factors') or []) }}>{{ factor }}</label>
+          {% endfor %}
+        </div>
+      </fieldset>
+    </section>
+
+    <section class="focus-step focus-write-step">
+      <label class="f prompt-input">What's your main focus for today?
+        <input type="text" name="intention" value="{{ t.get('intention', '') }}" maxlength="300"
+               placeholder="The single thing that would make today count">
+      </label>
+    </section>
+
+    <section class="focus-step focus-write-step">
+      <label class="f prompt-input">What's helping you stay grounded?
+        <input type="text" name="triggers" value="{{ t.get('triggers', '') }}" maxlength="300"
+               placeholder="Name the thing to protect, avoid, or remember">
+      </label>
+    </section>
+
+    <section class="focus-step focus-signal">
+      <span class="eyebrow">weekly signal</span>
+      <h2>{{ snap.weekly_headline }}</h2>
+      <p>{{ snap.weekly_subtitle }}</p>
+      <div class="mood-calendar">
+        {% for d in snap.mood_calendar %}
+        <span class="{{ d.tone }} {{ 'done' if d.done }}">
+          <i></i><b>{{ d.day }}</b>
+        </span>
+        {% endfor %}
+      </div>
+    </section>
+
+    <button type="submit" class="primary editorial-submit focus-submit">Log morning</button>
+  </form>
+  {% else %}
+  <section class="focus-cover">
+    <span class="eyebrow">evening reflection</span>
+    <h1>{{ 'Evening logged.' if evening_done else 'Wrap up the day.' }}</h1>
+    <p>Close the loop. Keep it honest and short unless there is more to say.</p>
+  </section>
+
+  <form method="post" action="/mind/evening" class="mind-focus-form" data-offline-queue data-offline-label="evening debrief">
+    {% if t.get('intention') %}
+    <section class="focus-step">
+      <div class="reflection-anchor">
+        <span>Morning focus</span>
+        <strong>{{ t.get('intention') }}</strong>
+        <label class="check"><input type="checkbox" name="intention_done" value="1"
+          {{ 'checked' if t.get('intention_done') }}> It happened, even partly</label>
+      </div>
+    </section>
+    {% endif %}
+
+    {% for field, label, default in [('day_rating', 'How was today, honestly?', 5), ('stress', 'How stressed do you feel now?', 3)] %}
+    <section class="focus-step">
+      {% set current = t.get(field) or default %}
+      {% set labels = scale_labels.get(field) %}
+      <label class="focus-range-field">{{ label }}
+        <span class="focus-range-readout">
+          <output>{{ current }}</output>
+          {% if labels %}<b>{{ labels.get(current, '') }}</b>{% endif %}
+        </span>
+        <input type="range" name="{{ field }}" min="1" max="10" step="1" value="{{ current }}"
+          {% if labels %}{% for n, text in labels.items() %} data-label-{{ n }}="{{ text }}"{% endfor %}{% endif %}>
+      </label>
+      {% if labels %}
+      <div class="scale-ends" aria-hidden="true"><span>{{ labels.get(1, '') }}</span><span>{{ labels.get(10, '') }}</span></div>
+      {% endif %}
+    </section>
+    {% endfor %}
+
+    <section class="focus-step focus-write-step">
+      <label class="f prompt-input">What did the day ask of you?
+        <textarea name="evening_note" maxlength="4000"
+          placeholder="{{ snap.evening_prompt }}">{{ t.get('evening_note', '') }}</textarea>
+      </label>
+    </section>
+
+    <section class="focus-step focus-write-step">
+      <details class="more editorial-more" open>
+        <summary><span class="h">Thought check</span><span class="n">optional</span></summary>
+        {% set tr = t.get('thought_record') or {} %}
+        <div class="stack">
+          <label class="f">Just the facts
+            <input type="text" name="situation" value="{{ tr.get('situation', '') }}" maxlength="600">
+          </label>
+          <label class="f">What did the mind say?
+            <input type="text" name="thought" value="{{ tr.get('thought', '') }}" maxlength="600">
+          </label>
+          <label class="f">What would a fair observer say?
+            <input type="text" name="balanced" value="{{ tr.get('balanced', '') }}" maxlength="600">
+          </label>
+        </div>
+      </details>
+    </section>
+
+    <section class="focus-step focus-write-step">
+      <label class="f prompt-input">What would make tomorrow lighter?
+        <input type="text" name="protective_actions" value="{{ t.get('protective_actions', '') }}" maxlength="300">
+      </label>
+    </section>
+
+    <section class="focus-step focus-signal">
+      <span class="eyebrow">recent pattern</span>
+      <h2>{{ snap.weekly_headline }}</h2>
+      <p>{{ snap.weekly_subtitle }}</p>
+      <div class="tag-row">
+        {% for tag in snap.down_tags %}<span>{{ tag }}</span>{% else %}<span>not enough signal</span>{% endfor %}
+      </div>
+    </section>
+
+    <button type="submit" class="primary editorial-submit focus-submit">Log evening</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

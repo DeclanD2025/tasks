@@ -60,7 +60,10 @@ class _TagBalanceChecker(HTMLParser):
 
 def test_html_is_well_formed(authed: TestClient):
     """Every rendered page must have balanced, properly nested tags."""
-    targets = PAGES + ["/mind?phase=morning", "/mind?phase=evening", "/login"]
+    targets = PAGES + [
+        "/mind?phase=morning", "/mind?phase=evening",
+        "/mind/morning", "/mind/evening", "/login",
+    ]
     for path in targets:
         checker = _TagBalanceChecker()
         checker.feed(authed.get(path).text)
@@ -106,7 +109,7 @@ def test_pwa_assets_are_served_without_login(client: TestClient):
     worker = client.get("/service-worker.js")
     assert worker.status_code == 200
     assert worker.headers["service-worker-allowed"] == "/"
-    assert "orion-static-v7" in worker.text
+    assert "orion-static-v10" in worker.text
 
 
 def test_pages_require_login(client: TestClient):
@@ -159,9 +162,18 @@ def test_offline_queue_forms_are_marked(authed: TestClient):
     assert 'data-offline-queue' in workout
 
     mind = authed.get("/mind?phase=morning").text
-    assert 'action="/mind/morning"' in mind
+    assert 'href="/mind/morning"' in mind
+    assert 'href="/mind/evening"' in mind
     assert 'action="/mind/mindfulness"' in mind
     assert mind.count("data-offline-queue") >= 2
+
+    morning = authed.get("/mind/morning").text
+    assert 'action="/mind/morning"' in morning
+    assert 'data-offline-queue' in morning
+
+    evening = authed.get("/mind/evening").text
+    assert 'action="/mind/evening"' in evening
+    assert 'data-offline-queue' in evening
 
     stoic = authed.get("/stoic").text
     assert 'action="/stoic/entry"' in stoic
@@ -361,17 +373,21 @@ def test_evening_page_shows_cbt_pattern_readout(authed: TestClient):
 
 
 def test_morning_page_renders_protocol_and_chips(authed: TestClient):
-    page = authed.get("/mind?phase=morning").text
+    page = authed.get("/mind/morning").text
     assert "Morning brief" in page
     assert "intention" in page.lower()
     assert 'name="factors"' in page
 
 
 def test_checkin_scales_and_confirmation(authed: TestClient):
-    page = authed.get("/mind?phase=morning").text
-    # Tappable radio scales, not sliders.
-    assert 'type="range"' not in page
-    assert page.count('type="radio"') >= 40  # 4 fields x 10 steps
+    page = authed.get("/mind/morning").text
+    # Immersive check-ins use continuous slider controls.
+    assert page.count('type="range"') >= 4
+    assert 'data-label-10="excellent"' in page
+    assert "Answer quickly. The point is signal, not performance." not in page
+    assert "Marcus Aurelius" in page
+    assert 'class="dock"' not in page
+    assert 'class="masthead"' not in page
     # Saving redirects to a confirmed state that renders a toast.
     response = authed.post(
         "/mind/morning",

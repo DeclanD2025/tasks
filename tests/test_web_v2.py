@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import os
+import re
+from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.domains import settings_service
+from app.db.database import session_scope
+from app.db.models import ActivityMetricDaily, HealthMetricDaily, UserSetting
 from app.services import get_default_user_id
 from app.web.server import create_app
 
@@ -32,6 +37,16 @@ def authed(client: TestClient) -> TestClient:
     response = client.post("/login", data={"passphrase": "orion"}, follow_redirects=False)
     assert response.status_code == 303
     return client
+
+
+def _clear_hae_ingest_token() -> None:
+    with session_scope() as s:
+        row = s.query(UserSetting).filter_by(
+            user_id=get_default_user_id(),
+            key=settings_service.HAE_INGEST_TOKEN_HASH_KEY,
+        ).first()
+        if row is not None:
+            s.delete(row)
 
 
 def test_new_pages_render(authed: TestClient):
@@ -147,6 +162,7 @@ def test_data_exports(authed: TestClient):
 
 def test_hae_ingest_token_gate(client: TestClient):
     os.environ.pop("ORION_INGEST_TOKEN", None)
+    _clear_hae_ingest_token()
     response = client.post("/api/ingest/hae", json={"data": {"metrics": []}})
     assert response.status_code == 403  # disabled without a token
 
@@ -167,8 +183,59 @@ def test_hae_ingest_token_gate(client: TestClient):
         body = response.json()
         assert body["status"] == "ok"
         assert body["days"] == 1
+        with session_scope() as s:
+            row = s.query(HealthMetricDaily).filter_by(
+                user_id=get_default_user_id(), day=date(2026, 7, 1)
+            ).first()
+            assert row is not None
+            assert row.resting_hr == 58
     finally:
         os.environ.pop("ORION_INGEST_TOKEN", None)
+
+
+def test_hae_ingest_can_be_enabled_from_data_vault(authed: TestClient):
+    os.environ.pop("ORION_INGEST_TOKEN", None)
+    _clear_hae_ingest_token()
+    disabled = authed.post("/api/ingest/hae", json={"data": {"metrics": []}})
+    assert disabled.status_code == 403
+
+    page = authed.post("/data/hae-token").text
+    assert "HAE token generated" in page
+    match = re.search(r"<textarea[^>]*>([^<]+)</textarea>", page)
+    assert match
+    token = match.group(1).strip()
+
+    bad = authed.post(
+        "/api/ingest/hae",
+        json={"data": {"metrics": []}},
+        headers={"Authorization": "Bearer wrong"},
+    )
+    assert bad.status_code == 401
+
+    response = authed.post(
+        "/api/ingest/hae",
+        json={"data": {"metrics": [
+            {"name": "resting_heart_rate", "units": "bpm",
+             "data": [{"date": "2026-07-02 08:00:00 +0100", "qty": 57}]},
+            {"name": "step_count", "units": "count",
+             "data": [{"date": "2026-07-02 21:00:00 +0100", "qty": 12345}]},
+        ]}},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["days"] == 1
+
+    with session_scope() as s:
+        health = s.query(HealthMetricDaily).filter_by(
+            user_id=get_default_user_id(), day=date(2026, 7, 2)
+        ).first()
+        activity = s.query(ActivityMetricDaily).filter_by(
+            user_id=get_default_user_id(), day=date(2026, 7, 2)
+        ).first()
+        assert health is not None
+        assert health.resting_hr == 57
+        assert activity is not None
+        assert activity.steps == 12345
 
 
 def test_signals_fail_gracefully_offline(authed: TestClient):

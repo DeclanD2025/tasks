@@ -41,24 +41,39 @@
 
 <section class="panel">
   <h2>Auto-push from your phone</h2>
+  {% if generated_hae_token %}
+  <div class="toast" role="status">
+    HAE token generated. Copy it now; ORION stores only a hash and will not show
+    this token again.
+  </div>
+  <p class="hint">Use this bearer token in Health Auto Export:</p>
+  <textarea readonly rows="3" style="width:100%;font-family:var(--mono);font-size:12px">{{ generated_hae_token }}</textarea>
+  <p class="hint">Endpoint: <code>{{ request.base_url }}api/ingest/hae</code></p>
+  {% endif %}
   {% if ingest_configured %}
   <p class="hint">Push ingest is <b style="color:var(--good)">enabled</b>. In Health
   Auto Export, create a REST API automation pointed at
-  <code>/api/ingest/hae</code> with header
+  <code>{{ request.base_url }}api/ingest/hae</code> with header
   <code>Authorization: Bearer &lt;your token&gt;</code> — exports then land here on
   a schedule with no Mac in the loop.</p>
+  <form method="post" action="/data/hae-token" style="margin-top:10px">
+    <button type="submit" class="ghost">Rotate HAE token</button>
+  </form>
   {% else %}
   <p class="hint">Set the <code>ORION_INGEST_TOKEN</code> environment variable
   (e.g. <code>fly secrets set ORION_INGEST_TOKEN=…</code>) to enable
-  <code>POST /api/ingest/hae</code>. The Health Auto Export app can then push its
-  exports directly to this server on a schedule — telemetry stays fresh without
-  manual uploads.</p>
+  <code>POST /api/ingest/hae</code>, or generate a database-backed token here.
+  The Health Auto Export app can then push its exports directly to this server
+  on a schedule — telemetry stays fresh without manual uploads.</p>
+  <form method="post" action="/data/hae-token" style="margin-top:10px">
+    <button type="submit" class="primary">Generate HAE token</button>
+  </form>
   {% endif %}
 </section>
 
 <section class="panel">
   <h2>Coverage</h2>
-  <div class="factors">
+  <div class="factors coverage">
     {% set max_count = snap.metrics | map(attribute='count') | max %}
     {% for m in snap.metrics %}
     <div class="factor {{ 'absent' if m.status == 'missing' else '' }}">

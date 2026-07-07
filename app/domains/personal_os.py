@@ -9,6 +9,7 @@ scores are estimates, factors are visible, and sparse data stays sparse.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from math import isnan
@@ -204,6 +205,15 @@ class MindSnapshot:
     checkin_streak: int = 0
     reflection_streak: int = 0
     evening_prompt: str = ""
+    weekly_headline: str = ""
+    weekly_subtitle: str = ""
+    weekly_theme: str = ""
+    idea_prompt: str = ""
+    mood_calendar: list[dict] = field(default_factory=list)
+    top_activities: list[tuple[str, int]] = field(default_factory=list)
+    shine_tags: list[str] = field(default_factory=list)
+    down_tags: list[str] = field(default_factory=list)
+    recent_reflections: list[dict] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -1046,6 +1056,109 @@ def log_mindfulness_session(
         return row.id
 
 
+_FACTOR_LABELS = {
+    "sleep": "Sleep",
+    "training": "Training",
+    "work": "Work",
+    "people": "People",
+    "money": "Money",
+    "health": "Health",
+    "food": "Food",
+    "weather": "Weather",
+}
+
+
+def _factor_label(value: str) -> str:
+    key = str(value or "").strip().lower()
+    return _FACTOR_LABELS.get(key, key.replace("_", " ").title())
+
+
+def _mood_tone(value: int | None) -> str:
+    if value is None:
+        return "empty"
+    if value <= 3:
+        return "low"
+    if value >= 7:
+        return "high"
+    return "mid"
+
+
+def _mind_weekly_headline(mood_avg: float | None, trend: str) -> tuple[str, str]:
+    if mood_avg is None:
+        return "mind unmeasured.", "Run one honest check-in."
+    word = "good" if mood_avg >= 7 else "low" if mood_avg <= 3.5 else "okay"
+    movement = "rising" if trend == "improving" else "dipping" if trend == "dipping" else "steady"
+    return f"{word} mood.", f"{mood_avg:.1f} average mood this week · {movement}"
+
+
+def _mind_idea_prompt(today_row: MentalCheckIn | None, trend: str) -> str:
+    if today_row and today_row.energy <= 3:
+        return "What is the smallest useful step you can take before noon?"
+    if today_row and today_row.anxiety >= 7:
+        return "What can you remove, decide, or write down to reduce background load?"
+    if trend == "dipping":
+        return "What has been quietly draining you, and what boundary would make tomorrow lighter?"
+    if today_row and today_row.mood >= 7:
+        return "What helped today work, and how do you make it repeatable?"
+    return "What are some small, manageable steps that would improve mood and energy this week?"
+
+
+def _mind_calendar(rows: list[MentalCheckIn]) -> list[dict]:
+    by_day = {row.day: row for row in rows}
+    start = date.today() - timedelta(days=6)
+    out: list[dict] = []
+    for offset in range(7):
+        day = start + timedelta(days=offset)
+        row = by_day.get(day)
+        out.append({
+            "day": day.strftime("%a")[:1],
+            "date": day.isoformat(),
+            "mood": row.mood if row else None,
+            "tone": _mood_tone(row.mood if row else None),
+            "done": bool(row),
+        })
+    return out
+
+
+def _mind_factor_readouts(rows: list[MentalCheckIn]) -> tuple[list[tuple[str, int]], list[str], list[str]]:
+    week_rows = [row for row in rows if row.day >= date.today() - timedelta(days=6)]
+    all_counts: Counter[str] = Counter()
+    shine: Counter[str] = Counter()
+    down: Counter[str] = Counter()
+    for row in week_rows:
+        factors = [
+            _factor_label(f)
+            for f in ((row.extra or {}).get("factors") or [])
+            if str(f).strip()
+        ]
+        all_counts.update(factors)
+        if row.mood >= 7 or row.energy >= 7:
+            shine.update(factors)
+        if row.mood <= 4 or row.stress >= 6 or row.anxiety >= 6:
+            down.update(factors)
+    return (
+        [(label, count) for label, count in all_counts.most_common(3)],
+        [label for label, _ in shine.most_common(4)],
+        [label for label, _ in down.most_common(4)],
+    )
+
+
+def _recent_mind_reflections(rows: list[MentalCheckIn]) -> list[dict]:
+    out: list[dict] = []
+    for row in reversed(rows[-10:]):
+        if not ((row.evening_note or "").strip() or (row.intention or "").strip()):
+            continue
+        out.append({
+            "day": row.day.strftime("%d %b"),
+            "title": "evening" if (row.evening_note or "").strip() else "morning",
+            "mood": row.mood,
+            "body": (row.evening_note or row.intention or "").strip()[:220],
+        })
+        if len(out) >= 4:
+            break
+    return out
+
+
 def get_mind_snapshot(user_id: int) -> MindSnapshot:
     since = date.today() - timedelta(days=30)
     week_start = date.today() - timedelta(days=6)
@@ -1121,6 +1234,8 @@ def get_mind_snapshot(user_id: int) -> MindSnapshot:
         mood=today_row.mood if today_row else None,
         stress=today_row.stress if today_row else None,
     )
+    weekly_headline, weekly_subtitle = _mind_weekly_headline(mood_avg, trend)
+    top_activities, shine_tags, down_tags = _mind_factor_readouts(rows)
     return MindSnapshot(
         today_payload,
         mood_avg,
@@ -1135,6 +1250,15 @@ def get_mind_snapshot(user_id: int) -> MindSnapshot:
         checkin_streak=checkin_streak,
         reflection_streak=reflection_streak,
         evening_prompt=prompt,
+        weekly_headline=weekly_headline,
+        weekly_subtitle=weekly_subtitle,
+        weekly_theme="on the domino effect.",
+        idea_prompt=_mind_idea_prompt(today_row, trend),
+        mood_calendar=_mind_calendar(rows),
+        top_activities=top_activities,
+        shine_tags=shine_tags,
+        down_tags=down_tags,
+        recent_reflections=_recent_mind_reflections(rows),
     )
 
 

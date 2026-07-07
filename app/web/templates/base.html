@@ -15,7 +15,8 @@
   <script src="/static/orion-charts.js" defer></script>
   {% block head %}{% endblock %}
 </head>
-<body data-theme="{{ theme_intensity or 'cinematic' }}">
+{% set immersive_page = immersive or false %}
+<body data-theme="{{ theme_intensity or 'cinematic' }}" class="{{ 'immersive' if immersive_page else '' }}">
   <div class="atmosphere" aria-hidden="true">
     <svg viewBox="0 0 720 900" preserveAspectRatio="xMidYMin slice" xmlns="http://www.w3.org/2000/svg">
       <!-- Orion over the first viewport; the belt carries the light -->
@@ -57,7 +58,7 @@
   </div>
   <a class="skip" href="#main">Skip to content</a>
   <div class="wrap">
-    {% if active != 'login' %}
+    {% if active != 'login' and not immersive_page %}
     <header class="masthead">
       <span class="brand"><span class="live" aria-hidden="true"></span>Orion</span>
       <div class="masthead-right">
@@ -85,7 +86,7 @@
     </main>
   </div>
 
-  {% if active != 'login' %}
+  {% if active != 'login' and not immersive_page %}
   <div id="sync-status" class="sync-status" role="status" aria-live="polite" hidden></div>
 
   <nav class="dock" aria-label="Primary">

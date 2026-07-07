@@ -9,7 +9,11 @@ should render it.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import secrets
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -109,6 +113,7 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
 )
 
 _SPEC_BY_KEY = {spec.key: spec for spec in SETTING_SPECS}
+HAE_INGEST_TOKEN_HASH_KEY = "hae_ingest_token_sha256"
 
 GROUP_LABELS = {
     "recovery": "Sleep & recovery",
@@ -200,3 +205,56 @@ def set_values(user_id: int, form: dict[str, str]) -> list[str]:
                 row.value = {"v": value}
                 changed.append(key)
     return changed
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def generate_hae_ingest_token(user_id: int) -> str:
+    """Create a HAE REST ingest token and store only its hash.
+
+    `ORION_INGEST_TOKEN` remains the deployment-secret path. This database-backed
+    path lets the web app enable HAE from the authenticated Data Vault page when
+    a host has already been deployed without that secret.
+    """
+    token = secrets.token_urlsafe(32)
+    value = {"sha256": _token_hash(token), "created_at": datetime.now().isoformat()}
+    with session_scope() as s:
+        row = s.scalars(
+            select(UserSetting).where(
+                UserSetting.user_id == user_id,
+                UserSetting.key == HAE_INGEST_TOKEN_HASH_KEY,
+            )
+        ).first()
+        if row is None:
+            s.add(UserSetting(user_id=user_id, key=HAE_INGEST_TOKEN_HASH_KEY, value=value))
+        else:
+            row.value = value
+    return token
+
+
+def hae_ingest_token_configured(user_id: int) -> bool:
+    with session_scope() as s:
+        row = s.scalars(
+            select(UserSetting).where(
+                UserSetting.user_id == user_id,
+                UserSetting.key == HAE_INGEST_TOKEN_HASH_KEY,
+            )
+        ).first()
+        return bool(row and isinstance(row.value, dict) and row.value.get("sha256"))
+
+
+def verify_hae_ingest_token(user_id: int, supplied: str) -> bool:
+    if not supplied:
+        return False
+    supplied_hash = _token_hash(supplied)
+    with session_scope() as s:
+        row = s.scalars(
+            select(UserSetting).where(
+                UserSetting.user_id == user_id,
+                UserSetting.key == HAE_INGEST_TOKEN_HASH_KEY,
+            )
+        ).first()
+        expected = row.value.get("sha256") if row and isinstance(row.value, dict) else ""
+    return bool(expected) and hmac.compare_digest(supplied_hash, expected)
