@@ -52,31 +52,67 @@
 {% endif %}
 
 {% for block in workout.exercises %}
+{# Map last workout's sets by set number so each row can show a ghost target. #}
+{% set last_by_num = {} %}
+{% if block.last %}{% for r in block.last.sets %}{% if last_by_num.update({r.set_number: r}) %}{% endif %}{% endfor %}{% endif %}
+{% set next_set = (block.sets | selectattr('completed', 'equalto', false) | list | first) %}
 <section class="panel exercise-card" id="exercise-{{ block.id }}">
   <div class="exercise-head">
     <span class="glyph">{{ block.exercise.glyph }}</span>
     <div>
       <h2>{{ block.exercise.name }}</h2>
-      <p>{{ block.exercise.equipment }} · {{ block.exercise.primary }} · {{ block.completed_sets }}/{{ block.sets | length }} complete</p>
+      <p>{{ block.exercise.equipment }} · {{ block.exercise.primary }}</p>
     </div>
     <button class="timer-btn" type="button" data-rest-seconds="{{ workout.default_rest_seconds }}">Rest</button>
   </div>
 
-  <div class="set-stack">
+  <div class="ex-progress" aria-hidden="true">
+    {% for set in block.sets %}<span class="{{ 'done' if set.completed else ('now' if set.set_number == next_set.set_number else '') }}"></span>{% endfor %}
+  </div>
+  <div class="ex-meta">
+    <span>{{ block.completed_sets }}/{{ block.sets | length }} sets</span>
+    {% if block.volume %}<span>{{ '%.0f' % block.volume }} kg volume</span>{% endif %}
+    {% if block.last %}<span class="prev">last {{ block.last.date_label }} · top {{ '%g' % block.last.top_set }}kg</span>{% endif %}
+  </div>
+
+  <div class="set-log">
     {% for set in block.sets %}
-    <form method="post" action="/strength/sets/{{ set.id }}" class="set-row {{ 'done' if set.completed }}" data-offline-queue data-keep-values data-offline-label="strength set">
+    {% set prev = last_by_num.get(set.set_number) %}
+    {% if set.completed %}
+    {# Completed → calm summary line; the whole thing is a button that re-opens for editing #}
+    <form method="post" action="/strength/sets/{{ set.id }}" class="set-line done" data-offline-queue data-keep-values data-offline-label="strength set">
       <input type="hidden" name="workout_id" value="{{ workout.id }}">
-      <span class="set-num">{{ set.set_number }}</span>
-      <label>kg<input type="number" name="weight" value="{{ '%g' % set.weight if set.weight is not none else '' }}" inputmode="decimal" step="0.5" min="0"></label>
-      <label>reps<input type="number" name="reps" value="{{ set.reps if set.reps is not none else '' }}" inputmode="numeric" min="0"></label>
-      <label>RPE<input type="number" name="rpe" value="{{ '%g' % set.rpe if set.rpe is not none else '' }}" inputmode="decimal" min="1" max="10" step="0.5"></label>
+      <span class="set-tick" aria-hidden="true">✓</span>
+      <span class="set-n">{{ set.set_number }}</span>
+      <span class="set-read"><b>{{ '%g' % set.weight if set.weight is not none else '—' }}</b><i>kg</i> × <b>{{ set.reps if set.reps is not none else '—' }}</b>{% if set.rpe is not none %} <em>@{{ '%g' % set.rpe }}</em>{% endif %}</span>
+      {% if set.set_type and set.set_type != 'working' %}<span class="set-tag">{{ set.set_type }}</span>{% endif %}
+      <button class="set-undo" name="completed" value="" type="submit" aria-label="Reopen set {{ set.set_number }}">edit</button>
+    </form>
+    {% else %}
+    {# Incomplete → the focused entry row; the "next" set is emphasised #}
+    <form method="post" action="/strength/sets/{{ set.id }}" class="set-entry {{ 'now' if set.set_number == next_set.set_number }}" data-offline-queue data-keep-values data-offline-label="strength set">
+      <input type="hidden" name="workout_id" value="{{ workout.id }}">
+      <span class="set-n">{{ set.set_number }}</span>
+      <div class="set-field">
+        <input type="number" name="weight" value="{{ '%g' % set.weight if set.weight is not none else '' }}" inputmode="decimal" step="0.5" min="0"
+               placeholder="{{ '%g' % prev.weight if prev and prev.weight else 'kg' }}" aria-label="Weight kg">
+      </div>
+      <span class="set-x">×</span>
+      <div class="set-field">
+        <input type="number" name="reps" value="{{ set.reps if set.reps is not none else '' }}" inputmode="numeric" min="0"
+               placeholder="{{ prev.reps if prev and prev.reps else 'reps' }}" aria-label="Reps">
+      </div>
+      <div class="set-field rpe">
+        <input type="number" name="rpe" value="{{ '%g' % set.rpe if set.rpe is not none else '' }}" inputmode="decimal" min="1" max="10" step="0.5" placeholder="RPE" aria-label="RPE">
+      </div>
       <select name="set_type" aria-label="Set type">
         {% for st in set_types %}
         <option value="{{ st }}" {{ 'selected' if set.set_type == st }}>{{ st }}</option>
         {% endfor %}
       </select>
-      <button class="set-complete" name="completed" value="1" type="submit">{{ '✓' if set.completed else '▶' }}</button>
+      <button class="set-log-btn" name="completed" value="1" type="submit" aria-label="Log set {{ set.set_number }}">Log</button>
     </form>
+    {% endif %}
     {% endfor %}
   </div>
 

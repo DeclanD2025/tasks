@@ -94,11 +94,15 @@ function ensureMutationInput(form) {
   return input.value;
 }
 
-function formEntries(form) {
-  return Array.from(new FormData(form).entries()).map(([name, value]) => [
+function formEntries(form, submitter) {
+  // FormData omits the submit button's name/value; include it explicitly so
+  // buttons like "completed=1" (log a set) actually reach the server.
+  const entries = Array.from(new FormData(form).entries()).map(([name, value]) => [
     name,
     typeof File !== "undefined" && value instanceof File ? value.name : String(value),
   ]);
+  if (submitter && submitter.name) entries.push([submitter.name, submitter.value ?? ""]);
+  return entries;
 }
 
 function formDataFromEntries(entries) {
@@ -107,14 +111,14 @@ function formDataFromEntries(entries) {
   return body;
 }
 
-async function enqueueForm(form) {
+async function enqueueForm(form, submitter) {
   const id = ensureMutationInput(form);
   const payload = {
     id,
     action: form.action,
     method: (form.method || "post").toUpperCase(),
     label: form.dataset.offlineLabel || "entry",
-    entries: formEntries(form),
+    entries: formEntries(form, submitter),
     createdAt: Date.now(),
   };
   await withStore("readwrite", (store) => store.put(payload));
@@ -171,7 +175,7 @@ async function syncQueue({ redirect = false } = {}) {
   }
 }
 
-async function submitQueuedForm(form) {
+async function submitQueuedForm(form, submitter) {
   ensureMutationInput(form);
   const buttons = form.querySelectorAll('button[type="submit"], input[type="submit"]');
   buttons.forEach((button) => { button.disabled = true; });
@@ -179,7 +183,7 @@ async function submitQueuedForm(form) {
     const item = {
       action: form.action,
       method: (form.method || "post").toUpperCase(),
-      entries: formEntries(form),
+      entries: formEntries(form, submitter),
     };
     if (navigator.onLine) {
       const result = await postEntries(item);
@@ -188,15 +192,15 @@ async function submitQueuedForm(form) {
         return;
       }
       if (result.loginRequired) {
-        await enqueueForm(form);
+        await enqueueForm(form, submitter);
         window.location.assign("/login");
         return;
       }
     }
-    await enqueueForm(form);
+    await enqueueForm(form, submitter);
     if (!form.matches("[data-keep-values]")) form.reset();
   } catch {
-    await enqueueForm(form);
+    await enqueueForm(form, submitter);
     if (!form.matches("[data-keep-values]")) form.reset();
   } finally {
     buttons.forEach((button) => { button.disabled = false; });
@@ -227,7 +231,7 @@ document.addEventListener("submit", (event) => {
   const form = event.target;
   if (!(form instanceof HTMLFormElement) || !form.matches("[data-offline-queue]")) return;
   event.preventDefault();
-  submitQueuedForm(form);
+  submitQueuedForm(form, event.submitter);
 });
 
 let restTimer = null;

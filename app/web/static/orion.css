@@ -2431,29 +2431,101 @@ details.session .set { font-family: var(--font-mono); font-size: 12px; color: va
 .timer-btn {
   min-height: 38px; padding: 8px 10px; border-radius: 999px; font-size: 10px;
 }
-.set-stack { display: grid; gap: 7px; }
-.set-row {
-  display: grid; grid-template-columns: 28px minmax(54px, 1fr) minmax(54px, 1fr) minmax(48px, .8fr) 78px 42px;
-  gap: 6px; align-items: end; padding: 8px; border: 1px solid var(--line);
-  border-radius: 12px; background: var(--surface-1);
+/* Per-exercise progress: one pip per set (done / current / pending). Reads the
+   whole exercise at a glance without a table. */
+.ex-progress { display: flex; gap: 4px; margin: 2px 0 8px; }
+.ex-progress span {
+  flex: 1 1 auto; height: 4px; border-radius: 999px;
+  background: rgba(255,255,255,0.09);
 }
-.set-row.done { border-color: rgba(108,217,166,0.36); background: rgba(108,217,166,0.045); }
-.set-num {
-  align-self: center; text-align: center; font-family: var(--font-mono); color: var(--text-2);
+.ex-progress span.done { background: var(--good); }
+.ex-progress span.now {
+  background: var(--accent); box-shadow: 0 0 8px rgba(138,230,255,0.4);
 }
-.set-row label {
-  display: grid; gap: 3px; font-family: var(--font-mono); font-size: 8px;
-  letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-3);
+.ex-meta {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 12px;
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--text-3);
 }
-.set-row input, .set-row select { padding: 9px 7px; min-height: 38px; font-size: 14px; }
-.set-row select { font-size: 11px; }
-.set-complete {
-  min-height: 38px; padding: 0; border-radius: 10px; font-size: 14px;
+.ex-meta .prev { color: var(--text-3); opacity: 0.85; }
+
+/* The set log — a training record, not a spreadsheet. Completed sets collapse
+   to a calm one-line readout; the set you're on is the loud, editable row. */
+.set-log { display: grid; gap: 5px; }
+
+.set-line {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 10px;
+  background: rgba(108,217,166,0.06);
+  border: 1px solid rgba(108,217,166,0.18);
+}
+.set-line .set-tick { color: var(--good); font-size: 13px; }
+.set-line .set-n {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-3);
+  min-width: 12px;
+}
+.set-read { flex: 1 1 auto; font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
+.set-read b { font-weight: 650; }
+.set-read i { font-style: normal; font-size: 11px; color: var(--text-3); margin-left: 1px; }
+.set-read em { font-style: normal; font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
+.set-tag {
+  font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--warn);
+  padding: 2px 7px; border-radius: 999px; border: 1px solid rgba(223,174,106,0.3);
+}
+.set-undo {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--text-3);
+  background: none; border: 0; padding: 4px 6px; cursor: pointer; min-height: 0;
+}
+.set-undo:hover { color: var(--text-2); }
+
+.set-entry {
+  display: grid;
+  grid-template-columns: 18px minmax(0,1fr) 12px minmax(0,1fr) 58px 74px 56px;
+  gap: 8px; align-items: center;
+  padding: 8px 10px; border-radius: 11px;
+  background: var(--surface-1); border: 1px solid var(--line);
+}
+/* Hidden inputs must not consume a grid column. */
+.set-entry > input[type="hidden"], .set-line > input[type="hidden"] { display: none; }
+.set-entry .set-n {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-3); text-align: center;
+}
+.set-entry .set-x { text-align: center; color: var(--text-3); font-size: 13px; }
+.set-field { min-width: 0; }
+.set-field input {
+  width: 100%; min-height: 42px; padding: 8px 10px; font-size: 17px;
+  text-align: center; font-variant-numeric: tabular-nums;
+  border-radius: 9px; border: 1px solid var(--line); background: rgba(255,255,255,0.02);
+}
+.set-field.rpe input { font-size: 13px; }
+.set-field input::placeholder { color: var(--text-3); opacity: 0.5; font-size: 13px; }
+.set-entry select {
+  min-height: 42px; padding: 8px 6px; font-size: 11px; min-width: 0;
+  border-radius: 9px; border: 1px solid var(--line); background: rgba(255,255,255,0.02);
+}
+.set-log-btn {
+  min-height: 42px; padding: 0; border-radius: 9px; font-size: 11px;
+  letter-spacing: 0.14em; text-transform: uppercase; font-family: var(--font-mono);
   background: var(--silver); color: #0a0c0e; border-color: var(--silver);
 }
-@media (max-width: 430px) {
-  .set-row { grid-template-columns: 28px 1fr 1fr 42px; }
-  .set-row label:nth-of-type(3), .set-row select { display: none; }
+/* The current set gets the spotlight — accent ring + lift. */
+.set-entry.now {
+  border-color: rgba(138,230,255,0.45);
+  background:
+    linear-gradient(180deg, rgba(138,230,255,0.06), transparent 70%),
+    var(--surface-1);
+  box-shadow: 0 0 0 1px rgba(138,230,255,0.12), 0 10px 26px -18px rgba(0,0,0,0.9);
+}
+.set-entry.now .set-log-btn { background: var(--accent); border-color: var(--accent); }
+.set-entry.now .set-n { color: var(--accent); }
+
+@media (max-width: 460px) {
+  .set-entry {
+    grid-template-columns: 16px minmax(0,1fr) 10px minmax(0,1fr) 52px 56px;
+  }
+  .set-entry select { display: none; }
 }
 .exercise-actions {
   display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px;
