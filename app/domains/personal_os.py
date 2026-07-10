@@ -680,7 +680,7 @@ def get_run_plan_snapshot(user_id: int, recovery: RecoverySnapshot | None = None
 
     score = recovery.score if recovery else None
     current_week = max(1, min(8, (today.toordinal() % 56) // 7 + 1))
-    weekly_target = max(8.0, min(32.0, (sum(distances[-14:]) / 4.0 if distances else 8.0) * 1.10))
+    weekly_target = max(6.0, min(32.0, (sum(distances[-14:]) / 4.0 if distances else 6.0) * 1.10))
     if freq < 4:
         weekly_target = min(12.0, weekly_target)
     # Operator override from Settings; blank keeps the adaptive target above.
