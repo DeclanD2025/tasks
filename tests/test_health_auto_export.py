@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 
+from app import services
+from app.db.models import ActivityMetricDaily, HealthMetricDaily
 from app.integrations.health_auto_export.parser import parse_payload
+from app.integrations.health_auto_export.storage import upsert_metric_rows
 
 
 # A realistic Health Auto Export payload (trimmed). Covers the metrics ORION
@@ -299,3 +302,242 @@ def test_workout_export_imports_completed_workout_with_route(tmp_path):
         assert row.distance_meters == 4003
         assert round(row.average_heart_rate, 1) == 160.3
         assert len(row.route_geometry) == 2
+
+
+# Storage tests use 2025 dates to avoid the seeded mock data, which covers
+# the last 30 days from "today".
+
+
+def test_upsert_metric_rows_creates_health_metric_daily():
+    from app.db.database import session_scope
+
+    uid = services.get_default_user_id()
+    records = [
+        {
+            "day": "2025-01-10",
+            "sleep_minutes": 450,
+            "hrv_ms": 55.0,
+            "resting_hr": 52,
+            "weight_kg": 78.5,
+        }
+    ]
+    with session_scope() as session:
+        count = upsert_metric_rows(session, uid, records)
+        assert count == 1
+        row = (
+            session.query(HealthMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-10")
+            .one()
+        )
+        assert row.sleep_minutes == 450
+        assert row.hrv_ms == 55.0
+        assert row.resting_hr == 52
+        assert row.weight_kg == 78.5
+
+
+def test_upsert_metric_rows_creates_activity_metric_daily():
+    from app.db.database import session_scope
+
+    uid = services.get_default_user_id()
+    records = [
+        {
+            "day": "2025-01-11",
+            "steps": 8200,
+            "exercise_minutes": 42,
+            "active_energy_kcal": 520,
+        }
+    ]
+    with session_scope() as session:
+        count = upsert_metric_rows(session, uid, records)
+        assert count == 1
+        row = (
+            session.query(ActivityMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-11")
+            .one()
+        )
+        assert row.steps == 8200
+        assert row.active_minutes == 42
+        assert row.extra["active_energy_kcal"] == 520
+
+
+def test_upsert_metric_rows_stores_extra_keys():
+    from app.db.database import session_scope
+
+    uid = services.get_default_user_id()
+    records = [
+        {
+            "day": "2025-01-12",
+            "mood": 0.5,
+            "mindful_minutes": 10,
+            "distance_km": 4.2,
+            "vo2max": 51.4,
+            "respiratory_rate": 15.4,
+        }
+    ]
+    with session_scope() as session:
+        upsert_metric_rows(session, uid, records)
+        row = (
+            session.query(HealthMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-12")
+            .one()
+        )
+        assert row.extra["mood"] == 0.5
+        assert row.extra["mindful_minutes"] == 10
+        assert row.extra["distance_km"] == 4.2
+        assert row.extra["vo2max"] == 51.4
+        assert row.extra["respiratory_rate"] == 15.4
+
+
+def test_upsert_metric_rows_updates_existing_row():
+    from app.db.database import session_scope
+
+    uid = services.get_default_user_id()
+    with session_scope() as session:
+        upsert_metric_rows(
+            session,
+            uid,
+            [{"day": "2025-01-13", "sleep_minutes": 400, "steps": 5000}],
+        )
+    with session_scope() as session:
+        upsert_metric_rows(
+            session,
+            uid,
+            [{"day": "2025-01-13", "sleep_minutes": 450, "hrv_ms": 60.0}],
+        )
+        row = (
+            session.query(HealthMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-13")
+            .one()
+        )
+        assert row.sleep_minutes == 450
+        assert row.hrv_ms == 60.0
+        activity = (
+            session.query(ActivityMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-13")
+            .one()
+        )
+        assert activity.steps == 5000
+
+
+def test_upsert_metric_rows_empty_records():
+    from app.db.database import session_scope
+
+    uid = services.get_default_user_id()
+    with session_scope() as session:
+        assert upsert_metric_rows(session, uid, []) == 0
+
+
+def test_upsert_metric_rows_no_activity_data_does_not_create_activity_row():
+    from app.db.database import session_scope
+
+    uid = services.get_default_user_id()
+    records = [{"day": "2025-01-14", "sleep_minutes": 450}]
+    with session_scope() as session:
+        upsert_metric_rows(session, uid, records)
+        health = (
+            session.query(HealthMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-14")
+            .one()
+        )
+        assert health.sleep_minutes == 450
+        activity = (
+            session.query(ActivityMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-14")
+            .first()
+        )
+        assert activity is None
+
+
+def test_upsert_metric_rows_idempotent():
+    from app.db.database import session_scope
+
+    uid = services.get_default_user_id()
+    records = [{"day": "2025-01-15", "sleep_minutes": 480, "steps": 10000}]
+    with session_scope() as session:
+        upsert_metric_rows(session, uid, records)
+    with session_scope() as session:
+        upsert_metric_rows(session, uid, records)
+        health_count = (
+            session.query(HealthMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-15")
+            .count()
+        )
+        activity_count = (
+            session.query(ActivityMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-15")
+            .count()
+        )
+        assert health_count == 1
+        assert activity_count == 1
+
+
+def test_upsert_metric_rows_backfills_activity_to_existing_health_day():
+    from app.db.database import session_scope
+
+    uid = services.get_default_user_id()
+    with session_scope() as session:
+        upsert_metric_rows(
+            session, uid, [{"day": "2025-01-16", "sleep_minutes": 420}]
+        )
+    with session_scope() as session:
+        upsert_metric_rows(
+            session, uid, [{"day": "2025-01-16", "steps": 7000}]
+        )
+        health = (
+            session.query(HealthMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-16")
+            .one()
+        )
+        assert health.sleep_minutes == 420
+        activity = (
+            session.query(ActivityMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-16")
+            .one()
+        )
+        assert activity.steps == 7000
+
+
+def test_upsert_metric_rows_updates_extra_keys():
+    from app.db.database import session_scope
+
+    uid = services.get_default_user_id()
+    with session_scope() as session:
+        upsert_metric_rows(
+            session, uid, [{"day": "2025-01-17", "mood": 0.5}]
+        )
+    with session_scope() as session:
+        upsert_metric_rows(
+            session, uid, [{"day": "2025-01-17", "mood": 0.8}]
+        )
+        row = (
+            session.query(HealthMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-17")
+            .one()
+        )
+        assert row.extra["mood"] == 0.8
+
+
+def test_upsert_metric_rows_backfills_health_to_existing_activity_day():
+    from app.db.database import session_scope
+
+    uid = services.get_default_user_id()
+    with session_scope() as session:
+        upsert_metric_rows(
+            session, uid, [{"day": "2025-01-18", "steps": 5000}]
+        )
+    with session_scope() as session:
+        upsert_metric_rows(
+            session, uid, [{"day": "2025-01-18", "sleep_minutes": 400}]
+        )
+        activity = (
+            session.query(ActivityMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-18")
+            .one()
+        )
+        assert activity.steps == 5000
+        health = (
+            session.query(HealthMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-18")
+            .one()
+        )
+        assert health.sleep_minutes == 400

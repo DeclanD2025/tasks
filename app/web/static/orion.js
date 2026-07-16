@@ -833,6 +833,24 @@ document.addEventListener("change", (event) => {
   });
 })();
 
+// --------------------------------------------------------- collapsing header
+(function collapsingHeader() {
+  const masthead = qs(".masthead");
+  if (!masthead) return;
+  let ticking = false;
+  function update() {
+    const scrollY = window.scrollY || window.pageYOffset;
+    masthead.classList.toggle("is-collapsed", scrollY > 50);
+    ticking = false;
+  }
+  window.addEventListener("scroll", () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(update);
+  }, { passive: true });
+  update();
+})();
+
 // ----------------------------------------------------- small page behaviours
 document.addEventListener("click", (event) => {
   const focusSearch = event.target.closest?.("[data-focus-search]");

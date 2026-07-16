@@ -66,6 +66,11 @@ class ScoreFactor:
     contribution: float
     present: bool = True
 
+    @property
+    def delta(self) -> float:
+        """Contribution expressed as a deviation from a neutral 50 baseline."""
+        return self.contribution - 50.0
+
 
 @dataclass(frozen=True)
 class OperatingInsight:
@@ -85,6 +90,8 @@ class TodayMetric:
     interpretation: str
     quality: str
     series: list[float] = field(default_factory=list)
+    is_partial_day: bool = False
+    partial_note: str = ""
 
 
 @dataclass(frozen=True)
@@ -425,6 +432,8 @@ def get_recovery_snapshot(user_id: int) -> RecoverySnapshot:
         factors.append(ScoreFactor("Mood", f"{latest_mood:+.2f}", "Apple Health State of Mind", mood_score))
 
     score = round(mean(scores), 0) if scores else None
+    # Sort factors so the strongest drivers (by absolute delta) appear first.
+    factors = sorted(factors, key=lambda f: abs(f.delta), reverse=True)
     estimated = len([f for f in factors if f.present]) < 4
     if score is None:
         label = "No recovery score"
@@ -463,43 +472,79 @@ def _health_metric_cards(
     activity_extra = _activity_extra_frame(user_id, days=35)
     cards: list[TodayMetric] = []
 
-    def add(label: str, value: str, values: list[float], interpretation: str, quality: str, lower: bool = False) -> None:
+    # Any metric whose latest point is today is flagged as partial, because
+    # the day is not yet complete and comparing it to full-day averages is
+    # misleading without intraday normalisation.
+    today = date.today()
+    latest_health_day = health["day"].max() if not health.empty and "day" in health else None
+    latest_activity_day = activity["day"].max() if not activity.empty and "day" in activity else None
+    latest_extra_day = extra["day"].max() if not extra.empty and "day" in extra else None
+
+    def add(
+        label: str,
+        value: str,
+        values: list[float],
+        interpretation: str,
+        quality: str,
+        lower: bool = False,
+        *,
+        is_partial_day: bool = False,
+        partial_note: str = "",
+    ) -> None:
         trend, _trend_label = _trend(values, lower_is_better=lower)
-        cards.append(TodayMetric(label, value, trend, interpretation, quality, values[-14:]))
+        cards.append(
+            TodayMetric(
+                label,
+                value,
+                trend,
+                interpretation,
+                quality,
+                values[-14:],
+                is_partial_day=is_partial_day,
+                partial_note=partial_note or ("incomplete day" if is_partial_day else ""),
+            )
+        )
 
     sleep = _values(health, "sleep_minutes")
     sleep_target = (
-        f"personal need {_duration_label(sleep_debt.need_minutes)}"
+        f"your personal need is {_duration_label(sleep_debt.need_minutes)}"
         if sleep_debt.need_minutes is not None
-        else "target 7.5-8h"
+        else "aim for 7.5-8 hours"
     )
-    add("Sleep", _duration_label(_latest(sleep)), [v / 60 for v in sleep], sleep_target if sleep else "missing from HAE", "real" if sleep else "missing")
-
-    if sleep_debt.calibrating:
-        add("Sleep Debt", "—", [], f"calibrating {sleep_debt.nights_recorded}/{derived.CALIBRATION_NIGHTS} nights", "missing")
-    else:
-        trend_note = ""
-        if sleep_debt.trend_minutes is not None and abs(sleep_debt.trend_minutes) >= 20:
-            trend_note = ", growing" if sleep_debt.trend_minutes > 0 else ", repaying"
-        add(
-            "Sleep Debt",
-            sleep_debt.label,
-            [],
-            f"14-night shortfall vs personal need{trend_note}",
-            "estimated",
-        )
+    add("Sleep", _duration_label(_latest(sleep)), [v / 60 for v in sleep], sleep_target if sleep else "not imported yet", "real" if sleep else "missing")
 
     hrv = _values(health, "hrv_ms")
-    add("HRV", f"{_latest(hrv):.0f} ms" if hrv else "-", hrv, "compare to your baseline" if hrv else "missing from HAE", "real" if hrv else "missing")
+    add("HRV", f"{_latest(hrv):.0f} ms" if hrv else "-", hrv, "compared to your own baseline" if hrv else "not imported yet", "real" if hrv else "missing")
 
     rhr = _values(health, "resting_hr")
-    add("Resting HR", f"{_latest(rhr):.0f} bpm" if rhr else "-", rhr, "lower vs baseline usually helps recovery" if rhr else "missing from HAE", "real" if rhr else "missing", True)
+    add("Resting HR", f"{_latest(rhr):.0f} bpm" if rhr else "-", rhr, "lower than your baseline usually means better recovery" if rhr else "not imported yet", "real" if rhr else "missing", True)
 
+    # Secondary signals: shown only after progressive disclosure.
     steps = _values(activity_extra, "steps") or _values(activity, "steps")
-    add("Steps", f"{_latest(steps):,.0f}" if steps else "-", steps, "daily movement signal" if steps else "export steps from HAE", "real" if steps else "missing")
+    steps_partial = latest_activity_day == today if latest_activity_day else False
+    steps_interp = "movement so far today" if steps else "export steps from Health Auto Export"
+    add(
+        "Steps",
+        f"{_latest(steps):,.0f}" if steps else "-",
+        steps,
+        f"{steps_interp}{' — the day is not over yet' if steps_partial else ''}",
+        "real" if steps else "missing",
+        is_partial_day=steps_partial,
+        partial_note="today — still counting",
+    )
 
     active_energy = _values(activity_extra, "active_energy_kcal") or _values(extra, "active_energy_kcal")
-    add("Active Energy", f"{_latest(active_energy):.0f} kcal" if active_energy else "-", active_energy, "useful strain context" if active_energy else "export active energy", "real" if active_energy else "missing")
+    energy_partial = latest_extra_day == today if latest_extra_day else False
+    energy_interp = "energy burned so far today" if active_energy else "export active energy from Health Auto Export"
+    add(
+        "Active Energy",
+        f"{_latest(active_energy):.0f} kcal" if active_energy else "-",
+        active_energy,
+        f"{energy_interp}{' — the day is not over yet' if energy_partial else ''}",
+        "real" if active_energy else "missing",
+        is_partial_day=energy_partial,
+        partial_note="today — still counting",
+    )
 
     load = _values(activity, "training_load")
     strain_series = [d.trimp for d in strain_days]
@@ -511,26 +556,50 @@ def _health_metric_cards(
             "Strain",
             f"{today_strain.trimp:.0f} · {today_strain.band}" if today_strain else "-",
             strain_series,
-            "TRIMP from workout heart rate",
+            "strain estimated from workout heart rate",
             "estimated",
         )
     else:
         add("Strain", "-", [], "needs workouts with heart rate", "missing")
 
     distance = _values(extra, "distance_km")
-    add("Run/Walk Distance", f"{_latest(distance):.1f} km" if distance else "-", distance, "walking and running distance" if distance else "export distance", "real" if distance else "missing")
+    distance_partial = latest_extra_day == today if latest_extra_day else False
+    distance_interp = "walking and running distance so far today" if distance else "export distance from Health Auto Export"
+    add(
+        "Run/Walk Distance",
+        f"{_latest(distance):.1f} km" if distance else "-",
+        distance,
+        f"{distance_interp}{' — the day is not over yet' if distance_partial else ''}",
+        "real" if distance else "missing",
+        is_partial_day=distance_partial,
+        partial_note="today — still counting",
+    )
 
     weight = _values(health, "weight_kg")
-    add("Weight", f"{_latest(weight):.1f} kg" if weight else "-", weight, "latest body-mass signal" if weight else "optional export", "real" if weight else "missing")
+    add("Weight", f"{_latest(weight):.1f} kg" if weight else "-", weight, "latest body-mass reading" if weight else "optional export", "real" if weight else "missing")
+
+    if sleep_debt.calibrating:
+        add("Sleep Debt", "—", [], f"learning your baseline: {sleep_debt.nights_recorded} of {derived.CALIBRATION_NIGHTS} nights", "missing")
+    else:
+        trend_note = ""
+        if sleep_debt.trend_minutes is not None and abs(sleep_debt.trend_minutes) >= 20:
+            trend_note = ", growing" if sleep_debt.trend_minutes > 0 else ", repaying"
+        add(
+            "Sleep Debt",
+            sleep_debt.label,
+            [],
+            f"net shortfall over the last 14 nights vs your personal need{trend_note}",
+            "estimated",
+        )
 
     mindful = _values(extra, "mindful_minutes")
-    add("Mindfulness", f"{_latest(mindful):.0f} min" if mindful else "-", mindful, "Apple Health mindful minutes" if mindful else "no imported sessions", "real" if mindful else "missing")
+    add("Mindfulness", f"{_latest(mindful):.0f} min" if mindful else "-", mindful, "mindful minutes imported from Apple Health" if mindful else "no imported sessions", "real" if mindful else "missing")
 
     mood = _values(extra, "mood")
-    add("Mood", f"{_latest(mood):+.2f}" if mood else "-", mood, "State of Mind valence" if mood else "no State of Mind export", "real" if mood else "missing")
+    add("Mood", f"{_latest(mood):+.2f}" if mood else "-", mood, "State of Mind valence from Apple Health" if mood else "no State of Mind export", "real" if mood else "missing")
 
     respiratory = _values(extra, "respiratory_rate")
-    add("Respiratory Rate", f"{_latest(respiratory):.1f}/min" if respiratory else "-", respiratory, "sleep/illness context" if respiratory else "optional export", "real" if respiratory else "missing")
+    add("Respiratory Rate", f"{_latest(respiratory):.1f}/min" if respiratory else "-", respiratory, "context for sleep and illness" if respiratory else "optional export", "real" if respiratory else "missing")
 
     return cards
 

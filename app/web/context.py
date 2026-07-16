@@ -59,11 +59,39 @@ def _dayname(iso_day: str) -> str:
         return str(iso_day)
 
 
+SIGNAL_GLYPHS = {
+    "Sleep": "◌",
+    "HRV": "♡",
+    "Resting HR": "♥",
+    "Steps": "⏱",
+    "Active Energy": "⚡",
+    "Workout Load": "⚑",
+    "Strain": "⚑",
+    "Run/Walk Distance": "⌖",
+    "Weight": "◯",
+    "Sleep Debt": "☾",
+    "Mindfulness": "◉",
+    "Mood": "◎",
+    "Respiratory Rate": "≈",
+}
+
+FACTOR_DETAIL_KEYS = {
+    "Sleep": "sleep",
+    "HRV": "hrv",
+    "Resting HR": "resting_hr",
+    "Recent strain": "training_load",
+    "Sleep debt": "sleep_debt",
+    "Mood": "mood",
+}
+
+
 templates.env.globals.update(
     NAV_DOCK=NAV_DOCK,
     NAV_MORE=NAV_MORE,
     spark=presentation.spark,
     delta=presentation.delta,
+    SIGNAL_GLYPHS=SIGNAL_GLYPHS,
+    FACTOR_DETAIL_KEYS=FACTOR_DETAIL_KEYS,
 )
 templates.env.filters["money"] = presentation.money
 templates.env.filters["dayname"] = _dayname

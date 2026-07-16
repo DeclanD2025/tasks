@@ -6153,6 +6153,7 @@ class SettingsPage(_ScrollPage):
     # --- Health Auto Export (auto-updating) ------------------------------- #
     def _health_auto_export_panel(self) -> GlassPanel:
         from app.ingestion import get_connector
+        from app.db.models import DataSource
 
         panel = GlassPanel()
         title = QLabel("Health Auto Export  ·  auto-updating")
@@ -6165,22 +6166,97 @@ class SettingsPage(_ScrollPage):
         uid = services.get_default_user_id()
         fresh = hae.latest_day(uid) if uid else None
 
+        # Fetch the recorded source row for real last-sync metadata.
+        last_synced = None
+        if uid:
+            from app.db.database import session_scope
+            with session_scope() as s:
+                row = s.query(DataSource).filter_by(
+                    user_id=uid, key="health_auto_export"
+                ).first()
+                if row is not None:
+                    last_synced = row.last_synced_at
+
+        # Build a compact status card with subtle colour coding.
+        status_card = QWidget()
+        status_card.setStyleSheet(
+            f"background-color: {PALETTE.subtle}; border: 1px solid {PALETTE.border_soft};"
+            f" border-radius: 3px;"
+        )
+        status_layout = QVBoxLayout(status_card)
+        status_layout.setContentsMargins(12, 10, 12, 10)
+        status_layout.setSpacing(6)
+
         if folder and latest:
-            status = QLabel(
-                f"LIVE · watching {folder}\n"
-                f"latest file: {latest.name}"
-                + (f"  ·  data through {fresh.isoformat()}" if fresh else "")
+            file_mtime = datetime.fromtimestamp(latest.stat().st_mtime)
+            age = datetime.now() - file_mtime
+            age_hours = age.total_seconds() / 3600
+            age_label = self._format_age(age)
+
+            # Colour-code freshness: fresh < 24h, stale 1-7d, very stale > 7d.
+            if age_hours < 24:
+                freshness_color = PALETTE.positive
+                freshness_text = "FRESH"
+            elif age_hours < 168:
+                freshness_color = PALETTE.orange
+                freshness_text = "STALE"
+            else:
+                freshness_color = PALETTE.coral
+                freshness_text = "VERY STALE"
+
+            header_row = QHBoxLayout()
+            header_row.setSpacing(8)
+            status_dot = QLabel("●")
+            status_dot.setStyleSheet(f"color:{freshness_color}; font-size:10px;")
+            status_label = QLabel(f"LIVE · {freshness_text}")
+            status_label.setStyleSheet(
+                f"color:{freshness_color}; font-family:{TYPE.mono}; font-size:{TYPE.small}px;"
+                " font-weight:700;"
             )
-            status.setObjectName("Muted")
+            header_row.addWidget(status_dot)
+            header_row.addWidget(status_label)
+            header_row.addStretch(1)
+            status_layout.addLayout(header_row)
+
+            detail = QLabel(
+                f"Watching: {folder}\n"
+                f"Latest file: {latest.name}  ·  {age_label}\n"
+                + (f"Data through: {fresh.isoformat()}  ·  " if fresh else "")
+                + (f"Last sync: {self._format_sync_time(last_synced)}"
+                   if last_synced else "")
+            )
+            detail.setObjectName("Muted")
+            detail.setWordWrap(True)
+            status_layout.addWidget(detail)
         else:
-            status = QLabel(
+            detail = QLabel(
                 "Not configured. Point ORION at the folder Health Auto Export "
                 "writes to (e.g. an iCloud Drive folder). New files refresh "
                 "automatically on each sync — no manual export."
             )
-            status.setObjectName("Faint")
-        status.setWordWrap(True)
-        panel.body.addWidget(status)
+            detail.setObjectName("Faint")
+            detail.setWordWrap(True)
+            status_layout.addWidget(detail)
+
+        panel.body.addWidget(status_card)
+
+        # Coverage summary: small metric chips for the data we actually hold.
+        if uid:
+            coverage = self._hae_coverage(uid)
+            if coverage:
+                coverage_card = QWidget()
+                coverage_card.setStyleSheet(
+                    f"background-color: {PALETTE.bg_panel_alt}; border: 1px solid {PALETTE.border_soft};"
+                    f" border-radius: 3px;"
+                )
+                coverage_layout = QHBoxLayout(coverage_card)
+                coverage_layout.setContentsMargins(10, 8, 10, 8)
+                coverage_layout.setSpacing(14)
+                for label, value, color in coverage:
+                    chip = self._hae_metric_chip(label, value, color)
+                    coverage_layout.addWidget(chip)
+                coverage_layout.addStretch(1)
+                panel.body.addWidget(coverage_card)
 
         howto = QLabel(
             "In Health Auto Export (iPhone): create an Automation → Export "
@@ -6244,6 +6320,75 @@ class SettingsPage(_ScrollPage):
             "and the Stoic observatory now reflect it.",
         )
         self.parent_refresh()
+
+    def _format_age(self, age: timedelta) -> str:
+        """Human-readable age for the latest HAE file."""
+        seconds = int(age.total_seconds())
+        if seconds < 60:
+            return "just now"
+        if seconds < 3600:
+            return f"{seconds // 60}m ago"
+        if seconds < 86400:
+            return f"{seconds // 3600}h ago"
+        return f"{seconds // 86400}d ago"
+
+    def _format_sync_time(self, dt: datetime | None) -> str:
+        """Short last-sync label, e.g. '26 Jun 14:01'."""
+        if dt is None:
+            return "never"
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.strftime("%d %b %H:%M")
+
+    def _hae_coverage(self, user_id: int) -> list[tuple[str, str, str]]:
+        """Return (label, value, colour) chips for HAE data coverage."""
+        from app.db.database import session_scope
+        from app.db.models import ActivityMetricDaily, HealthMetricDaily, Workout
+        from sqlalchemy import func
+
+        chips: list[tuple[str, str, str]] = []
+        with session_scope() as s:
+            health_count = s.query(HealthMetricDaily).filter_by(user_id=user_id).count()
+            activity_count = s.query(ActivityMetricDaily).filter_by(user_id=user_id).count()
+            workout_count = s.query(Workout).filter_by(
+                user_id=user_id, source="health_auto_export"
+            ).count()
+            latest_health = (
+                s.query(HealthMetricDaily.day)
+                .filter_by(user_id=user_id)
+                .order_by(HealthMetricDaily.day.desc())
+                .first()
+            )
+
+        chips.append(("Health rows", str(health_count), PALETTE.sage))
+        chips.append(("Activity rows", str(activity_count), PALETTE.accent_dim))
+        chips.append(("Workouts", str(workout_count), PALETTE.violet))
+        if latest_health:
+            chips.append(("Latest", latest_health[0].isoformat(), PALETTE.text_dim))
+        return chips
+
+    def _hae_metric_chip(self, label: str, value: str, color: str) -> QWidget:
+        """A small, subtle metric chip for the HAE coverage row."""
+        chip = QWidget()
+        chip.setStyleSheet(
+            f"background-color: {PALETTE.bg_panel}; border: 1px solid {PALETTE.border_soft};"
+            f" border-radius: 2px;"
+        )
+        lay = QVBoxLayout(chip)
+        lay.setContentsMargins(8, 5, 8, 5)
+        lay.setSpacing(1)
+        lbl = QLabel(label.upper())
+        lbl.setStyleSheet(
+            f"color:{PALETTE.text_faint}; font-family:{TYPE.mono}; font-size:{TYPE.nano}px;"
+            " letter-spacing:1px;"
+        )
+        val = QLabel(value)
+        val.setStyleSheet(
+            f"color:{color}; font-family:{TYPE.mono}; font-size:{TYPE.small}px; font-weight:700;"
+        )
+        lay.addWidget(lbl)
+        lay.addWidget(val)
+        return chip
 
     def parent_refresh(self) -> None:
         # Rebuild this settings page to reflect new freshness.

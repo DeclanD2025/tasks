@@ -1,0 +1,32 @@
+# Auto-deploy ORION's web layer to Fly.io on every push to the app branch.
+# The live site is https://orion-decdundas.fly.dev (app: orion-decdundas, lhr).
+# Requires a repo secret FLY_API_TOKEN — generate with `fly tokens create deploy`
+# and add it under GitHub → repo Settings → Secrets and variables → Actions.
+name: Deploy ORION to Fly
+
+on:
+  push:
+    branches:
+      - web-life-cockpit
+    # Skip deploys for changes that can't affect the running app.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/**'
+  workflow_dispatch: {}   # allow a manual "Run workflow" button too
+
+concurrency:
+  group: fly-deploy
+  cancel-in-progress: false   # never interrupt a deploy mid-roll
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

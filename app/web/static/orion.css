@@ -3385,3 +3385,272 @@ body[data-theme="observatory"] .atmosphere {
 @media (prefers-reduced-motion: reduce) {
   .tappable, .tappable:hover { transform: none; transition: none; }
 }
+
+/* ------------------------------------------------------------------ health observatory */
+
+.health-hero {
+  position: relative;
+  margin: 0 -16px 24px;
+  padding: 28px 16px 24px;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 100% at 50% -20%, rgba(138, 230, 255, 0.06), transparent 55%),
+    linear-gradient(180deg, rgba(10, 11, 13, 0.72), rgba(10, 11, 13, 0.42));
+  border-bottom: 1px solid var(--line);
+}
+.health-hero-glow {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(600px 300px at 20% 0%, rgba(138, 230, 255, 0.08), transparent 60%),
+    radial-gradient(500px 280px at 85% 100%, rgba(108, 217, 166, 0.05), transparent 60%);
+}
+.health-hero-inner {
+  position: relative; z-index: 1;
+  display: grid; gap: 18px;
+}
+.health-hero-state { text-align: left; }
+.health-hero-label {
+  display: block;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.3em;
+  text-transform: uppercase; color: var(--text-3); margin-bottom: 6px;
+}
+.health-hero-title {
+  margin: 0; font-size: 32px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.1;
+}
+.health-hero-score {
+  display: flex; align-items: baseline; gap: 6px; margin-top: 8px;
+}
+.health-hero-number {
+  font-size: 56px; font-weight: 250; line-height: 1; letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.health-hero-unit {
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.health-hero-meta {
+  margin: 8px 0 0;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.health-hero-meta span + span::before {
+  content: "·"; margin: 0 8px; color: var(--line-strong);
+}
+.health-hero-action { max-width: 520px; }
+.health-hero-explanation {
+  margin: 0 0 14px; font-size: 16px; line-height: 1.55; color: var(--text-2);
+}
+
+.health-section {
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 24px;
+}
+.health-section-head { margin-bottom: 16px; }
+.health-section-head h2 {
+  margin: 0 0 4px; font-size: 13px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text);
+}
+.health-section-sub {
+  margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--text-3);
+}
+
+.health-factors { display: grid; gap: 8px; }
+.health-factor {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "label delta"
+    "value delta"
+    "impact delta";
+  gap: 2px 16px;
+  align-items: center;
+  padding: 12px 14px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.health-factor:hover { background: rgba(255,255,255,0.025); border-color: var(--line-strong); }
+.health-factor.absent { opacity: 0.65; }
+.health-factor-label {
+  grid-area: label;
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.24em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.health-factor-value { grid-area: value; font-size: 15px; font-weight: 600; }
+.health-factor-impact { grid-area: impact; font-size: 12px; color: var(--text-3); }
+.health-factor-delta {
+  grid-area: delta;
+  font-family: var(--font-mono); font-size: 18px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.health-factor-delta.positive { color: var(--good); }
+.health-factor-delta.negative { color: var(--crit); }
+
+.health-primary-grid { display: grid; gap: 10px; }
+@media (min-width: 560px) { .health-primary-grid { grid-template-columns: repeat(3, 1fr); } }
+
+.health-signal {
+  position: relative;
+  padding: 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.health-signal.compact { padding: 12px; }
+.health-signal-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  margin-bottom: 8px;
+}
+.health-signal-label {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.health-signal-partial {
+  font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--warn);
+  border: 1px solid rgba(223, 174, 106, 0.35); border-radius: 3px;
+  padding: 2px 6px;
+}
+.health-signal-body {
+  display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px;
+}
+.health-signal-value {
+  font-size: 28px; font-weight: 350; letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.health-signal-unit {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.health-signal-note { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--text-2); }
+.health-signal-spark {
+  display: block; width: 100%; height: 30px; margin-top: 12px;
+}
+.health-signal-spark polyline {
+  fill: none; stroke: rgba(200, 208, 216, 0.45); stroke-width: 1.4;
+  stroke-linejoin: round; stroke-linecap: round;
+}
+.health-signal-spark circle.tip { fill: var(--accent); }
+
+.health-sleep-band {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+}
+.health-sleep-stat { display: grid; gap: 4px; }
+.health-sleep-value {
+  font-size: 22px; font-weight: 320; font-variant-numeric: tabular-nums;
+}
+.health-sleep-value small { font-size: 11px; color: var(--text-3); font-weight: 500; }
+.health-sleep-label {
+  font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.health-hint { color: var(--text-3); font-size: 13px; margin: 12px 0 0; }
+
+.health-more {
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 24px;
+}
+.health-more summary {
+  cursor: pointer; list-style: none;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 12px 0;
+}
+.health-more summary::-webkit-details-marker { display: none; }
+.health-more-title {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.24em;
+  text-transform: uppercase; color: var(--text);
+}
+.health-more-count {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em;
+  color: var(--text-3);
+}
+.health-secondary-grid {
+  display: grid; gap: 10px;
+  margin-top: 14px;
+}
+@media (min-width: 560px) { .health-secondary-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.health-changes { margin: 0; padding-left: 18px; }
+.health-changes li { margin-bottom: 8px; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+
+.health-deepdives { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.health-missing { margin-top: 18px; }
+.health-missing-title {
+  display: block; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--text-3); margin-bottom: 8px;
+}
+.health-missing-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.health-missing-item {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em;
+  color: var(--text-3); border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 3px; padding: 4px 10px;
+}
+
+/* Collapsing header — stays in flow, shrinks on scroll */
+.masthead {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  width: 100%;
+  align-self: stretch;
+  transition: padding 0.25s ease, background 0.25s ease, border-color 0.25s ease;
+}
+.masthead .masthead-brand,
+.masthead .stamp {
+  transition: font-size 0.25s ease, opacity 0.25s ease, transform 0.25s ease;
+}
+.masthead.is-collapsed {
+  padding: 8px 2px calc(8px + env(safe-area-inset-top));
+  padding-top: max(8px, env(safe-area-inset-top));
+  background: rgba(3, 3, 4, 0.92);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+}
+.masthead.is-collapsed .masthead-brand { font-size: 11px; }
+.masthead.is-collapsed .stamp { opacity: 0; pointer-events: none; transform: translateY(-2px); }
+
+/* Strengthen selected tab feedback */
+nav.dock a.active { color: var(--accent); }
+nav.dock a.active::before {
+  height: 2.5px; left: 20%; right: 20%;
+  box-shadow: 0 0 10px rgba(138, 230, 255, 0.85);
+}
+
+/* iOS safe-area fixes */
+.wrap { padding-top: max(12px, env(safe-area-inset-top)); }
+
+/* Distinct signal visualisation patterns */
+.health-signal-sleep { border-top: 2px solid rgba(138, 230, 255, 0.55); }
+.health-signal-sleep .health-signal-spark polyline { stroke: rgba(138, 230, 255, 0.55); }
+
+.health-signal-hrv { border-top: 2px solid rgba(184, 164, 255, 0.55); }
+.health-signal-hrv .health-signal-spark polyline { stroke: rgba(184, 164, 255, 0.55); }
+
+.health-signal-resting-hr { border-top: 2px solid rgba(255, 139, 107, 0.55); }
+.health-signal-resting-hr .health-signal-spark polyline { stroke: rgba(255, 139, 107, 0.55); }
+
+.health-signal-steps { border-left: 2px solid rgba(108, 217, 166, 0.45); }
+.health-signal-steps .health-signal-spark polyline { stroke: rgba(108, 217, 166, 0.55); }
+
+.health-signal-active-energy,
+.health-signal-strain { border-left: 2px solid rgba(223, 174, 106, 0.45); }
+.health-signal-active-energy .health-signal-spark polyline,
+.health-signal-strain .health-signal-spark polyline { stroke: rgba(223, 174, 106, 0.55); }
+
+.health-signal-weight { border-left: 2px solid rgba(200, 208, 216, 0.45); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .health-hero-glow { animation: health-glow 8s ease-in-out infinite alternate; }
+  @keyframes health-glow {
+    from { opacity: 0.6; transform: scale(1); }
+    to { opacity: 1; transform: scale(1.04); }
+  }
+}

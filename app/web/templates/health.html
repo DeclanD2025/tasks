@@ -9,98 +9,180 @@
   {% if snap.score is not none %}<span>{{ '%.0f' % snap.score }}/100</span>{% endif %}
   <span>data {{ snap.data_quality }}</span>
   {% if snap.estimated %}<span>EST</span>{% endif %}
-  <span>debt {{ sleep_debt.label }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="cols">
-<div class="col">
-<section class="panel hero">
-  <div class="hero-top">
-    {{ ui.score_ring(snap.score, snap.label, detail='readiness') }}
-    <div class="hero-status">
-      <h1>{{ snap.label }}</h1>
-      <div class="estimate">
-        {% if snap.score is not none %}{{ '%.0f' % snap.score }}/100 ·{% endif %}
-        data {{ snap.data_quality }}{% if snap.estimated %} · estimated{% endif %}
+{# Readiness hero — full-width, open, atmospheric #}
+<section class="health-hero" data-collapsible-hero>
+  <div class="health-hero-glow" aria-hidden="true"></div>
+  <div class="health-hero-inner">
+    <div class="health-hero-state">
+      <span class="health-hero-label">Readiness</span>
+      <h1 class="health-hero-title">{{ snap.label }}</h1>
+      <div class="health-hero-score">
+        {% if snap.score is not none %}
+        <span class="health-hero-number">{{ '%.0f' % snap.score }}</span>
+        <span class="health-hero-unit">/100</span>
+        {% else %}
+        <span class="health-hero-number">—</span>
+        {% endif %}
       </div>
+      <p class="health-hero-meta">
+        <span>data {{ snap.data_quality }}</span>
+        {% if snap.estimated %}<span>· estimated</span>{% endif %}
+      </p>
+    </div>
+    <div class="health-hero-action">
+      <p class="health-hero-explanation">{{ snap.recommendation }}</p>
+      <button type="button" class="btn primary" data-detail="readiness">See how this is calculated</button>
     </div>
   </div>
-  <div class="directive-primary"><span class="tag">Hold</span><span>{{ snap.recommendation }}</span></div>
-  <p class="note">A transparent estimate from your own baselines — not a clinical measure.
-  Tap the ring for the formula; every factor and its exact input is listed below.</p>
 </section>
 
-<section class="panel">
-  <h2>Readiness inputs</h2>
-  <div class="factors">
+{# Readiness factors — score contributions, not progress bars #}
+<section class="health-section">
+  <div class="health-section-head">
+    <h2>What’s driving readiness</h2>
+    <p class="health-section-sub">Positive numbers lift the score; negative numbers pull it down. Tap any factor for the exact input.</p>
+  </div>
+  <div class="health-factors">
     {% for f in snap.factors %}
-    <div class="factor {{ 'absent' if not f.present else '' }}">
-      <span class="k">{{ f.label }}</span>
-      <span class="v">{{ f.value }}</span>
-      <span class="impact">{{ f.impact }}</span>
-      <span class="track" aria-hidden="true"><i style="width: {{ '%.0f' % f.contribution }}%"></i></span>
-    </div>
+    <button type="button" class="health-factor {{ 'absent' if not f.present else '' }}" data-detail="{{ FACTOR_DETAIL_KEYS.get(f.label, '') }}">
+      <span class="health-factor-label">{{ f.label }}</span>
+      <span class="health-factor-value">{{ f.value }}</span>
+      <span class="health-factor-impact">{{ f.impact }}</span>
+      <span class="health-factor-delta {{ 'positive' if f.delta >= 0 else 'negative' }}">
+        {{ '+' if f.delta > 0 }}{{ '%.0f' % f.delta }}
+      </span>
+    </button>
     {% endfor %}
   </div>
-  <p class="note" style="margin-top:10px">Bars show each factor's 0–100 contribution to the composite.
-  Missing factors are shown, not silently skipped.</p>
 </section>
 
-<section class="panel">
-  <h2>Sleep debt</h2>
+{# Primary signals — only the three most important #}
+<section class="health-section">
+  <div class="health-section-head">
+    <h2>Primary signals</h2>
+    <p class="health-section-sub">The three inputs that currently matter most for recovery.</p>
+  </div>
+  <div class="health-primary-grid">
+    {% for m in signals.primary %}
+    <article class="health-signal {{ m.quality }} {{ 'partial' if m.is_partial_day else '' }} health-signal-{{ m.label | lower | replace(' ', '-') | replace('/', '-') }}">
+      <div class="health-signal-head">
+        <span class="health-signal-label">{{ SIGNAL_GLYPHS.get(m.label, '') }} {{ m.label }}</span>
+        {% if m.is_partial_day %}<span class="health-signal-partial">{{ m.partial_note }}</span>{% endif %}
+      </div>
+      <div class="health-signal-body">
+        <span class="health-signal-value">{{ m.value }}</span>
+        <span class="health-signal-unit">{{ m.trend }}</span>
+      </div>
+      <p class="health-signal-note">{{ m.interpretation }}</p>
+      {% if m.series %}
+      <svg class="health-signal-spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true" data-spark="{{ m.series | join(',') }}">
+        <polyline points="{{ spark(m.series) }}"></polyline>
+        <circle class="tip" cx="{{ spark(m.series).rsplit(' ', 1)[-1].split(',')[0] }}" cy="{{ spark(m.series).rsplit(' ', 1)[-1].split(',')[1] }}" r="1.8"></circle>
+      </svg>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+{# Sleep debt — open, human copy #}
+<section class="health-section">
+  <div class="health-section-head">
+    <h2>Sleep debt</h2>
+    <p class="health-section-sub">How your recent nights compare to your own baseline.</p>
+  </div>
   {% if sleep_debt.calibrating %}
   {{ ui.empty_state(
       'Calibrating: ' ~ sleep_debt.nights_recorded ~ ' of 14 nights.',
-      'ORION learns your personal sleep need from your own nights before it claims a debt — no generic 8-hour rule. Keep sleep flowing in via HAE.',
+      'ORION learns your personal sleep need from your own nights before it claims a debt. Keep sleep flowing in via Health Auto Export.',
       '/data', 'Check imports') }}
   {% else %}
-  <div class="stat-band">
-    <div class="stat"><div class="n">{{ sleep_debt.label }}</div><div class="l">Debt · 14 nights</div></div>
-    <div class="stat"><div class="n">{{ '%.1f' % (sleep_debt.need_minutes / 60) }}<small> h</small></div><div class="l">Your need</div></div>
-    <div class="stat">
+  <div class="health-sleep-band">
+    <div class="health-sleep-stat">
+      <span class="health-sleep-value">{{ sleep_debt.label }}</span>
+      <span class="health-sleep-label">Debt over 14 nights</span>
+    </div>
+    <div class="health-sleep-stat">
+      <span class="health-sleep-value">{{ '%.1f' % (sleep_debt.need_minutes / 60) }}<small>h</small></span>
+      <span class="health-sleep-label">Your nightly need</span>
+    </div>
+    <div class="health-sleep-stat">
       {% if sleep_debt.trend_minutes is not none %}
-      <div class="n">{{ '%.1f' % (sleep_debt.trend_minutes | abs / 60) }}<small> h {{ 'up' if sleep_debt.trend_minutes > 0 else 'down' }}</small></div>
-      {% else %}<div class="n">—</div>{% endif %}
-      <div class="l">Week trend</div>
+      <span class="health-sleep-value">{{ '%.1f' % (sleep_debt.trend_minutes | abs / 60) }}<small>h {{ 'up' if sleep_debt.trend_minutes > 0 else 'down' }}</small></span>
+      {% else %}<span class="health-sleep-value">—</span>{% endif %}
+      <span class="health-sleep-label">Week trend</span>
     </div>
   </div>
-  <p class="hint">Need is the trimmed mean of your own recent nights; debt is the net
-  shortfall against it. Under 15 minutes reads as clear. Tap for the nightly series.</p>
-  <div class="btnrow compact" style="margin-top:10px">
+  <p class="health-hint">Need is the trimmed mean of your recent nights; debt is the net shortfall against it. Under 15 minutes reads as clear.</p>
+  <div class="btnrow compact" style="margin-top:12px">
     <button type="button" class="btn ghost" data-detail="sleep_debt">Inspect calculation</button>
     <button type="button" class="btn ghost" data-detail="sleep">Sleep trend</button>
   </div>
   {% endif %}
 </section>
-</div>
 
-<div class="col">
-{{ ui.signal_board(signals, detail_key=detail_key, title='Signals — tap any card') }}
+{# Secondary signals — progressive disclosure #}
+{% if signals.secondary or signals.missing %}
+<details class="health-more">
+  <summary>
+    <span class="health-more-title">More signals</span>
+    <span class="health-more-count">{{ signals.secondary | length }} tracked</span>
+  </summary>
+  <div class="health-secondary-grid">
+    {% for m in signals.secondary %}
+    <article class="health-signal compact {{ m.quality }} {{ 'partial' if m.is_partial_day else '' }} health-signal-{{ m.label | lower | replace(' ', '-') | replace('/', '-') }}">
+      <div class="health-signal-head">
+        <span class="health-signal-label">{{ SIGNAL_GLYPHS.get(m.label, '') }} {{ m.label }}</span>
+        {% if m.is_partial_day %}<span class="health-signal-partial">{{ m.partial_note }}</span>{% endif %}
+      </div>
+      <div class="health-signal-body">
+        <span class="health-signal-value">{{ m.value }}</span>
+        <span class="health-signal-unit">{{ m.trend }}</span>
+      </div>
+      <p class="health-signal-note">{{ m.interpretation }}</p>
+    </article>
+    {% endfor %}
+  </div>
+  {% if signals.missing %}
+  <div class="health-missing">
+    <span class="health-missing-title">Not captured</span>
+    <div class="health-missing-list">
+      {% for m in signals.missing %}<span class="health-missing-item">{{ m.label }} — {{ m.interpretation }}</span>{% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</details>
+{% endif %}
 
-<section class="panel">
-  <h2>What changed</h2>
-  <ul class="clean">
+{# Changes — open list #}
+<section class="health-section">
+  <div class="health-section-head">
+    <h2>What changed</h2>
+  </div>
+  <ul class="health-changes">
     {% for change in snap.changes %}<li>{{ change }}</li>{% endfor %}
   </ul>
 </section>
 
-<section class="panel">
-  <h2>Deep dives</h2>
-  <div class="d-related" style="margin-top:2px">
-    <button type="button" data-detail="hrv">HRV</button>
-    <button type="button" data-detail="resting_hr">Resting HR</button>
-    <button type="button" data-detail="weight">Weight</button>
-    <button type="button" data-detail="vo2max">VO₂ max</button>
-    <button type="button" data-detail="training_load">Strain</button>
-    <button type="button" data-detail="mood">Mood</button>
-    <button type="button" data-detail="mindfulness">Mindfulness</button>
-    <button type="button" data-detail="steps">Steps</button>
+{# Deep dives #}
+<section class="health-section">
+  <div class="health-section-head">
+    <h2>Deep dives</h2>
+    <p class="health-section-sub">Every drilldown shows its source, freshness, trend, and calculation.</p>
   </div>
-  <p class="hint">Every drilldown shows its source, freshness, 7/30/90-day trend,
-  what it means, and how it's calculated.</p>
+  <div class="health-deepdives">
+    <button type="button" class="btn ghost" data-detail="hrv">HRV</button>
+    <button type="button" class="btn ghost" data-detail="resting_hr">Resting HR</button>
+    <button type="button" class="btn ghost" data-detail="weight">Weight</button>
+    <button type="button" class="btn ghost" data-detail="vo2max">VO₂ max</button>
+    <button type="button" class="btn ghost" data-detail="training_load">Strain</button>
+    <button type="button" class="btn ghost" data-detail="mood">Mood</button>
+    <button type="button" class="btn ghost" data-detail="mindfulness">Mindfulness</button>
+    <button type="button" class="btn ghost" data-detail="steps">Steps</button>
+  </div>
 </section>
-</div>
-</div>
 {% endblock %}

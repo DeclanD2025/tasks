@@ -26,7 +26,7 @@ def _render(request: Request) -> HTMLResponse:
         "health",
         snap=snapshot,
         sleep_debt=derived.get_sleep_debt(uid),
-        signals=presentation.partition_metrics(snapshot.metrics, primary_count=9),
+        signals=presentation.partition_metrics(snapshot.metrics, primary_count=3),
         detail_key=presentation.detail_key,
     )
 

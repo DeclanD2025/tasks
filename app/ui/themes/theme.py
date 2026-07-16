@@ -47,6 +47,10 @@ class Palette:
     warning: str = "#ffb454"
     critical: str = "#ff5d7a"
 
+    # Subtle tints — used for quiet status surfaces and soft highlights.
+    sage: str = "#7dd3c0"              # muted teal-green for low-noise signal
+    subtle: str = "#2a4a52"           # desaturated teal for tinted backgrounds
+
     star: str = "#bfe9f2"
 
 
