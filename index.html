@@ -191,6 +191,7 @@
     .roll-btn { padding: 4px 10px; font-size: 12px; }
     .time-badge.danger { background: #FEF2F2; color: #B91C1C; }
     .area-group-count { font-size: 12px; color: var(--text-secondary); }
+    .task-time { font-size: 12px; font-weight: 500; color: var(--text-secondary); letter-spacing: 0; font-variant-numeric: tabular-nums; }
 
     .task-list { display: flex; flex-direction: column; gap: 8px; }
 
@@ -653,6 +654,16 @@
     }
     .area-group-count { font-weight: 600; letter-spacing: 0.04em; }
     .cat-tag { font-size: 11px; font-weight: 600; border: 1.5px solid #0A0A0A; padding: 1px 7px; letter-spacing: 0.01em; }
+    .task-time {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      letter-spacing: 0.04em;
+      font-variant-numeric: tabular-nums;
+      border: 1.5px solid currentColor;
+      padding: 0 6px;
+      line-height: 1.6;
+    }
     .time-badge {
       font-weight: 700;
       font-size: 11px;
@@ -947,6 +958,23 @@
         counts[a] = (counts[a] || 0) + 1;
       });
       return counts;
+    }
+
+    // ---------- Time estimates ----------
+    // Parse {t:N} prefix from notes field, returning {minutes, cleanNotes} or null.
+    function parseTimeEst(notes) {
+      if (!notes) return null;
+      var m = notes.match(/^\{t:(\d+)\}\s*/);
+      if (m) return { minutes: parseInt(m[1], 10), cleanNotes: notes.slice(m[0].length) };
+      return null;
+    }
+    // Format minutes into a human string, e.g. 20 -> "20m", 90 -> "1h 30m".
+    function fmtTime(minutes) {
+      if (!minutes || minutes <= 0) return '';
+      if (minutes < 60) return minutes + 'm';
+      var h = Math.floor(minutes / 60);
+      var m = minutes % 60;
+      return h + 'h' + (m ? ' ' + m + 'm' : '');
     }
 
     // Extract category name from a prefixed currentView like "cat:Some Category".
@@ -1714,8 +1742,15 @@
       wrap.className = 'area-group';
       var header = document.createElement('div');
       header.className = 'area-group-header';
+      var totalMins = 0;
+      items.forEach(function (t) {
+        var te = parseTimeEst(t.notes);
+        if (te) totalMins += te.minutes;
+      });
+      var timeHtml = totalMins > 0 ? '<span class="time-badge" style="margin-left:auto">' + fmtTime(totalMins) + '</span>' : '';
       header.innerHTML = '<span class="area-badge" style="background:' + c.bg + ';color:' + c.fg + '">' + esc(area) + '</span>' +
-        '<span class="area-group-count">' + items.length + '</span>';
+        '<span class="area-group-count">' + items.length + '</span>' +
+        timeHtml;
       wrap.appendChild(header);
 
       var listEl = document.createElement('div');
@@ -1768,12 +1803,19 @@
       if (t.recurrence) {
         meta += '<span class="task-due"><span class="m-rep">↻</span>' + esc(RECUR_LABEL[t.recurrence] || 'Repeats') + '</span>';
       }
+      var te = parseTimeEst(t.notes);
+      if (te) {
+        meta += '<span class="task-time">' + fmtTime(te.minutes) + '</span>';
+      }
       body.innerHTML = titleHtml + (meta ? '<div class="task-meta">' + meta + '</div>' : '');
       if (t.notes) {
-        var n = document.createElement('div');
-        n.className = 'task-notes';
-        n.textContent = t.notes;
-        body.appendChild(n);
+        var displayNotes = te ? te.cleanNotes : t.notes;
+        if (displayNotes) {
+          var n = document.createElement('div');
+          n.className = 'task-notes';
+          n.textContent = displayNotes;
+          body.appendChild(n);
+        }
       }
 
       var shimmer = document.createElement('div');
