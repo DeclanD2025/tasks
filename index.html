@@ -592,6 +592,7 @@
       padding: 0 0 6px;
       border-bottom: 2px solid #0A0A0A;
     }
+
     .nav-item { color: #0A0A0A; font-weight: 500; padding: 8px; }
     .nav-item .nav-label { text-transform: uppercase; letter-spacing: 0.02em; font-size: 13px; }
     .nav-item:hover { background: #E0E0DA; }
@@ -749,6 +750,8 @@
       box-sizing: border-box;
     }
     .stats-link { text-decoration: none; }
+
+
   </style>
 </head>
 <body>
@@ -760,6 +763,7 @@
       <nav id="nav-views"></nav>
       <div class="nav-section-label">Areas</div>
       <nav id="nav-areas"></nav>
+
       <div class="sidebar-footer" id="sidebar-footer">—</div>
     </aside>
 
@@ -906,7 +910,9 @@
       var out = AREAS.slice();
       var seen = {};
       AREAS.forEach(function (a) { seen[a] = true; });
-      tasks.forEach(function (t) {
+      // Only include areas that have active (todo) tasks — done-task-only areas
+      // (like completed Issue 4 sub-areas) are excluded from the sidebar.
+      todoTasks().forEach(function (t) {
         var a = taskArea(t);
         if (!seen[a]) { seen[a] = true; out.push(a); }
       });
@@ -921,6 +927,14 @@
         counts[a] = (counts[a] || 0) + 1;
       });
       return counts;
+    }
+
+    // Extract category name from a prefixed currentView like "cat:Some Category".
+    function currentCategory() {
+      if (typeof currentView === 'string' && currentView.indexOf('cat:') === 0) {
+        return currentView.slice(4);
+      }
+      return null;
     }
 
     // ---------- Recurrence ----------
@@ -1507,12 +1521,15 @@
     }
 
     function renderActive() {
-      var title = currentView === 'all' ? 'All Tasks' : currentView;
+      var cat = currentCategory();
+      var title = currentView === 'all' ? 'All Tasks' : (cat ? cat : currentView);
       $('view-title').textContent = title;
 
       var list = activeTodos().filter(matchesSearch);
       var grouped;
-      if (currentView === 'all') {
+      if (cat) {
+        grouped = [{ area: title, items: sortTasks(list.filter(function (t) { return t.category === cat; })) }];
+      } else if (currentView === 'all') {
         grouped = effectiveAreas().map(function (a) {
           return { area: a, items: sortTasks(list.filter(function (t) { return taskArea(t) === a; })) };
         });
@@ -2218,6 +2235,8 @@
       closeModal();
     });
 
+    // ---------- Manage Categories ----------
+// ---------- Delete handling ----------
     $('f-delete').addEventListener('click', function () {
       var del = $('f-delete');
       if (!del.classList.contains('confirm')) {
