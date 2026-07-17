@@ -750,7 +750,8 @@
       box-sizing: border-box;
     }
     .stats-link { text-decoration: none; }
-
+    #add-area-btn { opacity: 0.5; transition: opacity 0.12s, background 0.12s; }
+    #add-area-btn:hover { opacity: 1; background: #D8D8D2; }
 
   </style>
 </head>
@@ -761,7 +762,10 @@
     <aside id="sidebar">
       <div class="brand"><span class="dot"></span> Tasks</div>
       <nav id="nav-views"></nav>
-      <div class="nav-section-label">Areas</div>
+      <div class="nav-section-label" id="label-areas" style="display:flex;align-items:center">
+        <span style="flex:1">Areas</span>
+        <button id="add-area-btn" title="Add area" style="font-size:14px;line-height:1;padding:0 2px;">＋</button>
+      </div>
       <nav id="nav-areas"></nav>
 
       <div class="sidebar-footer" id="sidebar-footer">—</div>
@@ -891,6 +895,21 @@
     };
     var PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
     var DEFAULT_AREA_COLOR = { bg: '#D8D8D2', fg: '#0A0A0A', dot: '#D8D8D2' };
+
+    // Load custom areas added by the user via the '+' button
+    (function loadCustomAreas() {
+      try {
+        var custom = JSON.parse(localStorage.getItem('td_custom_areas') || '[]');
+        custom.forEach(function (name) {
+          if (AREAS.indexOf(name) === -1) {
+            AREAS.push(name);
+            if (!AREA_COLORS[name]) {
+              AREA_COLORS[name] = { bg: '#D8D8D2', fg: '#0A0A0A', dot: '#D8D8D2' };
+            }
+          }
+        });
+      } catch (e) {}
+    })();
 
     // Normalise a task's area; tasks with no area land in "Uncategorized".
     function taskArea(t) { return (t && t.area) ? t.area : 'Uncategorized'; }
@@ -2237,6 +2256,36 @@
 
     // ---------- Manage Categories ----------
 // ---------- Delete handling ----------
+    // ---------- Add Area ----------
+    function addArea() {
+      var name = window.prompt('New area name:');
+      if (!name || !name.trim()) return;
+      name = name.trim();
+      if (AREAS.indexOf(name) !== -1) {
+        toast('Area "' + name + '" already exists');
+        return;
+      }
+      AREAS.push(name);
+      AREA_COLORS[name] = { bg: '#D8D8D2', fg: '#0A0A0A', dot: '#D8D8D2' };
+      // Persist
+      try {
+        var custom = JSON.parse(localStorage.getItem('td_custom_areas') || '[]');
+        custom.push(name);
+        localStorage.setItem('td_custom_areas', JSON.stringify(custom));
+      } catch (e) {}
+      renderNav();
+      // Open the task modal with the new area selected so they can create a task
+      openModal(null);
+      $('f-area').value = name;
+      $('f-title').focus();
+      toast('Area "' + name + '" added');
+    }
+
+    $('add-area-btn').addEventListener('click', function (e) {
+      e.stopPropagation();
+      addArea();
+    });
+
     $('f-delete').addEventListener('click', function () {
       var del = $('f-delete');
       if (!del.classList.contains('confirm')) {
