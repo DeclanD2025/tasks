@@ -1,0 +1,201 @@
+@import "tailwindcss";
+
+/* =========================================================================
+   ORION design system — Stage 5
+   One neutral foundation + restrained semantic domain colours.
+   Light + dark, theme-aware via [data-theme]; falls back to OS preference.
+   ========================================================================= */
+
+:root {
+  color-scheme: light;
+
+  /* neutral foundation — light */
+  --bg: #f7f8fa;
+  --bg-sunken: #eef0f4;
+  --surface: #ffffff;
+  --surface-2: #f4f5f8;
+  --surface-inset: #f0f2f5;
+  --border: #e4e7ec;
+  --border-strong: #d3d8e0;
+  --text: #10141b;
+  --text-2: #5a636f;
+  --text-3: #8b939f;
+  --overlay: rgba(16, 20, 27, 0.32);
+  --ring: #2563eb;
+
+  /* semantic status */
+  --good: #0f9d6a;
+  --warn: #c47d16;
+  --crit: #d64550;
+  --info: #2563eb;
+
+  /* domain hues (brief §11) — tuned for AA on both themes */
+  --sleep: #5b61e6;      /* indigo   */
+  --recovery: #0d9488;   /* teal     */
+  --running: #0e9bc4;    /* cyan/blue*/
+  --strength: #e56a1c;   /* orange   */
+  --cardio: #e0526b;     /* coral    */
+  --mind: #8b5cf6;       /* violet   */
+  --nutrition: #1c9c4d;  /* green    */
+  --meds: #d08a10;       /* amber    */
+  --neutral: #64748b;    /* slate    */
+
+  /* elevation */
+  --shadow-sm: 0 1px 2px rgba(16, 20, 27, 0.06), 0 1px 1px rgba(16, 20, 27, 0.04);
+  --shadow-md: 0 4px 12px -4px rgba(16, 20, 27, 0.12), 0 2px 6px -3px rgba(16, 20, 27, 0.08);
+  --shadow-lg: 0 24px 48px -24px rgba(16, 20, 27, 0.28);
+
+  --radius: 0.75rem;
+  --sidebar-w: 15rem;
+  --rail-w: 20rem;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0b0d10;
+  --bg-sunken: #070809;
+  --surface: #14171c;
+  --surface-2: #1a1e24;
+  --surface-inset: #101318;
+  --border: #262b33;
+  --border-strong: #363d47;
+  --text: #eef1f5;
+  --text-2: #a3adba;
+  --text-3: #6b7482;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --ring: #5b8bf0;
+
+  --good: #34d399;
+  --warn: #e6b45e;
+  --crit: #f0808c;
+  --info: #6ea8fe;
+
+  --sleep: #8b8ff5;
+  --recovery: #2dd4bf;
+  --running: #38bdf8;
+  --strength: #fb9a4b;
+  --cardio: #fb7185;
+  --mind: #b794f6;
+  --nutrition: #4ade80;
+  --meds: #f0b64a;
+  --neutral: #94a3b8;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 6px 16px -6px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 24px 56px -24px rgba(0, 0, 0, 0.75);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0b0d10;
+    --bg-sunken: #070809;
+    --surface: #14171c;
+    --surface-2: #1a1e24;
+    --surface-inset: #101318;
+    --border: #262b33;
+    --border-strong: #363d47;
+    --text: #eef1f5;
+    --text-2: #a3adba;
+    --text-3: #6b7482;
+    --overlay: rgba(0, 0, 0, 0.6);
+    --ring: #5b8bf0;
+    --good: #34d399;
+    --warn: #e6b45e;
+    --crit: #f0808c;
+    --info: #6ea8fe;
+    --sleep: #8b8ff5;
+    --recovery: #2dd4bf;
+    --running: #38bdf8;
+    --strength: #fb9a4b;
+    --cardio: #fb7185;
+    --mind: #b794f6;
+    --nutrition: #4ade80;
+    --meds: #f0b64a;
+    --neutral: #94a3b8;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 6px 16px -6px rgba(0, 0, 0, 0.6);
+    --shadow-lg: 0 24px 56px -24px rgba(0, 0, 0, 0.75);
+  }
+}
+
+/* Map tokens to Tailwind utilities (bg-surface, text-muted, text-recovery…) */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-sunken: var(--bg-sunken);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-inset: var(--surface-inset);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--text-2);
+  --color-faint: var(--text-3);
+
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-crit: var(--crit);
+  --color-info: var(--info);
+
+  --color-sleep: var(--sleep);
+  --color-recovery: var(--recovery);
+  --color-running: var(--running);
+  --color-strength: var(--strength);
+  --color-cardio: var(--cardio);
+  --color-mind: var(--mind);
+  --color-nutrition: var(--nutrition);
+  --color-meds: var(--meds);
+  --color-neutral: var(--neutral);
+
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv01", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+  .tnum { font-variant-numeric: tabular-nums; }
+  ::selection { background: color-mix(in oklab, var(--ring) 24%, transparent); }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}
+
+/* Domain colour helper: set --c from a domain, then use tint/text/border.
+   Usage: <div class="domain-tint" style={{ ['--c']: 'var(--recovery)' }}> */
+.domain-tint { background: color-mix(in oklab, var(--c) 12%, transparent); }
+.domain-tint-strong { background: color-mix(in oklab, var(--c) 18%, transparent); }
+.domain-text { color: var(--c); }
+.domain-border { border-color: color-mix(in oklab, var(--c) 40%, var(--border)); }
+.domain-bar { background: var(--c); }
+
+.scroll-slim { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.scroll-slim::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll-slim::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 8px; }
+
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
