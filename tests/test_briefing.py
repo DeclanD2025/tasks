@@ -392,6 +392,20 @@ def test_the_live_sections_are_recomputed_rather_than_frozen():
                 s.delete(row)
 
 
+def test_a_brief_written_under_older_rules_is_regenerated():
+    """Otherwise a deploy that changes the scoring or the copy is invisible for
+    the rest of the day, and the version stamp is decoration."""
+    brief_service.generate(USER, force=True)
+    with session_scope() as s:
+        row = s.scalars(select(DailyBrief).where(DailyBrief.user_id == USER)).first()
+        row.rule_version = "rules-from-last-week"
+        row.state_summary = "Written under the old rules."
+
+    again = brief_service.generate(USER)  # no force
+    assert again["ruleVersion"] == brief_service.RULE_VERSION
+    assert again["stateSummary"] != "Written under the old rules."
+
+
 def test_the_focus_line_does_not_repeat_the_staleness_caveat():
     """One caveat, one place.
 

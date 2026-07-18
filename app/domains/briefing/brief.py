@@ -291,7 +291,15 @@ def generate(uid: int, *, day: date | None = None, force: bool = False) -> dict:
 
     if not force:
         existing = _load(uid, day)
-        if existing and existing.get("daypart") == part:
+        # A brief written under older rules is not today's brief. RULE_VERSION
+        # was recorded as provenance but never acted on, so a deploy that
+        # changed the scoring or the wording left the current day showing the
+        # previous version's output until the daypart happened to roll over.
+        if (
+            existing
+            and existing.get("daypart") == part
+            and existing.get("ruleVersion") == RULE_VERSION
+        ):
             # The stored brief holds the narrative only. The live sections are
             # recomputed on every read — see _live_sections for why.
             return {**existing, **_live_sections(uid, day, part)}

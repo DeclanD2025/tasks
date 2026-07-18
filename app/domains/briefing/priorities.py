@@ -25,7 +25,10 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
 
-RULE_VERSION = "1"
+#: Bump whenever the scoring, the selection or the brief's wording changes.
+#: A stored brief carrying a different version is regenerated on next read —
+#: see brief.generate. Without the bump, a deploy is invisible until tomorrow.
+RULE_VERSION = "2"
 
 #: Above this many days overdue, deadline pressure stops increasing. A task
 #: three weeks late and one three months late are the same kind of problem, and
