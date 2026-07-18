@@ -17,6 +17,12 @@ packaging/*.spec
 packaging/build_macos.sh
 packaging/orion.mac.entitlements
 uv.lock
+# Front-end build inputs/outputs — the image builds these itself in the ui
+# stage; shipping the local copies would bloat the context and can leak a
+# host-built export compiled for a different base path.
+frontend/node_modules
+frontend/.next
+frontend/out
 *.db
 *.db-shm
 *.db-wal

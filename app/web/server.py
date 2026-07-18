@@ -37,6 +37,7 @@ from app.web.auth import SESSION_COOKIE, issue_token
 from app.web.context import authed, page, queued_request
 from app.web.presentation import delta as _delta  # noqa: F401 — public test contract
 from app.web.routes import ALL_ROUTERS
+from app.web import ui_next
 
 log = get_logger(__name__)
 
@@ -69,6 +70,13 @@ def create_app() -> FastAPI:
     )
     app.mount("/static", StaticFiles(directory=str(_HERE / "static")), name="static")
 
+    # The redesigned Next UI, if it has been built. Mounted before the routers
+    # so its base path resolves cleanly, and inside the session middleware so
+    # it stays behind the passphrase. `_ui_base` is read by the CSP middleware.
+    _ui_base = ui_next.mount_next_ui(app) or ""
+    if _ui_base == "/":
+        _ui_base = ""
+
     @app.get("/service-worker.js", include_in_schema=False)
     def service_worker():
         return FileResponse(
@@ -92,10 +100,21 @@ def create_app() -> FastAPI:
         # locked to 'self' — no inline handlers exist. Map tiles need img-src
         # for the OSM/Carto hosts; connect-src stays 'self' because every
         # external API is proxied server-side.
+        #
+        # The Next UI is the one exception: a static export inlines its
+        # hydration payload as ~13 <script> blocks and cannot carry a nonce
+        # (nonces need SSR). Without 'unsafe-inline' those are blocked and the
+        # app renders but never hydrates. The relaxation is scoped to the UI
+        # base path only, so the Jinja app keeps the strict policy. Acceptable
+        # here because that UI renders only first-party data — it never
+        # interpolates user-supplied HTML — and sits behind the session gate.
+        script_src = "script-src 'self'"
+        if _ui_base and request.url.path.startswith(_ui_base):
+            script_src = "script-src 'self' 'unsafe-inline'"
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; style-src 'self' 'unsafe-inline'; "
-            "script-src 'self'; "
+            f"{script_src}; "
             "img-src 'self' data: https://*.basemaps.cartocdn.com "
             "https://tile.openstreetmap.org; "
             "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
