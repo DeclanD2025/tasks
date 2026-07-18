@@ -30,7 +30,7 @@ export type MetricDetail = {
   freshness: string; // human "3h ago"
   interpretation: string;
   facts: { label: string; value: string; detail?: string }[];
-  related: string[]; // kinds
+  related: { kind: string; title: string }[];
 };
 
 export type StatusMetric = {
@@ -86,6 +86,10 @@ export type Insight = {
   domain: DomainKey;
   klass: EvidenceClass;
   confidence: Confidence;
+  /** What the rule suggests doing. Kept apart from `body` — a finding and a
+   *  recommendation warrant different levels of trust. */
+  action?: string;
+  severity?: "critical" | "warning" | "info" | "positive";
 };
 
 export type PlannedSession = {
@@ -131,7 +135,7 @@ export type Goal = {
 
 export type SyncSource = {
   name: string;
-  status: "ok" | "stale" | "disconnected" | "mock";
+  status: "ok" | "stale" | "disconnected" | "mock" | "error";
   freshness: string;
 };
 

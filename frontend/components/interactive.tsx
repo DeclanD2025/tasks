@@ -1,35 +1,24 @@
 "use client";
 
-import { Check, ChevronRight, Info, X } from "lucide-react";
+import { ChevronRight, Info } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { DOMAIN_LABEL, domainStyle } from "@/lib/domains";
-import { getMetric } from "@/lib/data";
 import type { MetricDetail, Recommendation } from "@/lib/types";
 import { TrendChart } from "./charts";
 import { Button, ConfidenceBadge, Meta, QualityBadge } from "./ui";
 
 /* ------------------------------------------------------ Recommendation */
+/**
+ * Today's single call.
+ *
+ * Apply / Dismiss are deliberately absent: acting on a recommendation has to
+ * persist somewhere, and ORION has no write endpoint for it yet. A button that
+ * only changes local state would report an adjustment that never happened.
+ */
 export function RecommendationCard({ rec }: { rec: Recommendation }) {
   const [showEvidence, setShowEvidence] = useState(false);
-  const [state, setState] = useState<"open" | "applied" | "dismissed">("open");
-
-  if (state !== "open") {
-    return (
-      <div className="flex items-center gap-3 rounded-xl border border-border bg-surface p-4" style={domainStyle(rec.domain)}>
-        <span className={cn("grid size-8 place-items-center rounded-full", state === "applied" ? "bg-good/15 text-good" : "bg-surface-2 text-faint")}>
-          {state === "applied" ? <Check className="size-4" /> : <X className="size-4" />}
-        </span>
-        <p className="text-[13px] text-muted">
-          {state === "applied" ? "Adjustment applied — today's interval session updated to 4 reps." : "Dismissed. It stays available in Insights."}
-        </p>
-        <button onClick={() => setState("open")} className="ml-auto text-[12px] font-medium text-muted hover:text-text">
-          Undo
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-[var(--shadow-sm)]" style={domainStyle(rec.domain)}>
@@ -43,17 +32,13 @@ export function RecommendationCard({ rec }: { rec: Recommendation }) {
         <h3 className="mt-1.5 text-lg font-semibold tracking-tight text-text">{rec.title}</h3>
         <p className="mt-1 text-[14px] leading-relaxed text-muted">{rec.body}</p>
 
-        <div className="mt-3.5 flex flex-wrap items-center gap-2">
-          <Button variant="accent" domain={rec.domain} size="sm" onClick={() => setState("applied")}>
-            <Check className="size-4" /> Apply adjustment
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setShowEvidence((v) => !v)} aria-expanded={showEvidence}>
-            <Info className="size-4" /> {showEvidence ? "Hide evidence" : "View evidence"}
-          </Button>
-          <Button variant="subtle" size="sm" onClick={() => setState("dismissed")}>
-            Dismiss
-          </Button>
-        </div>
+        {rec.evidence.length > 0 && (
+          <div className="mt-3.5 flex flex-wrap items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setShowEvidence((v) => !v)} aria-expanded={showEvidence}>
+              <Info className="size-4" /> {showEvidence ? "Hide evidence" : "View evidence"}
+            </Button>
+          </div>
+        )}
 
         {showEvidence && (
           <div className="mt-4 rounded-lg border border-border bg-surface-2 p-3 rise">
@@ -66,8 +51,8 @@ export function RecommendationCard({ rec }: { rec: Recommendation }) {
                 </div>
               ))}
             </dl>
-            <Link href="/insights/metric/resting_hr" className="mt-2.5 inline-flex items-center gap-1 text-[12px] font-medium domain-text">
-              Open resting-HR history <ChevronRight className="size-3.5" />
+            <Link href="/recovery" className="mt-2.5 inline-flex items-center gap-1 text-[12px] font-medium domain-text">
+              How readiness is scored <ChevronRight className="size-3.5" />
             </Link>
           </div>
         )}
@@ -184,15 +169,11 @@ export function MetricDetailView({ metric, compact = false }: { metric: MetricDe
         {metric.related.length > 0 && !compact && (
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[11px] text-faint">Related:</span>
-            {metric.related.map((k) => {
-              const rel = getMetric(k);
-              if (!rel) return null;
-              return (
-                <Link key={k} href={`/insights/metric/${k}`} className="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-muted hover:text-text">
-                  {rel.title}
-                </Link>
-              );
-            })}
+            {metric.related.map((rel) => (
+              <Link key={rel.kind} href={`/insights/metric/${rel.kind}`} className="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-muted hover:text-text">
+                {rel.title}
+              </Link>
+            ))}
           </div>
         )}
       </div>

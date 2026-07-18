@@ -4,20 +4,28 @@ import { Trophy } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { TrendChart } from "@/components/charts";
-import { InsightList } from "@/components/patterns";
+import { Loaded } from "@/components/loading";
+import { EmptyState, InsightList } from "@/components/patterns";
+import { useApi } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { domainStyle } from "@/lib/domains";
-import { getMetric, INSIGHTS, STRENGTH, SYNC_SOURCES } from "@/lib/data";
+import type { InsightsPayload } from "@/lib/payloads";
 import { mean } from "@/lib/series";
 
 const BOARD = ["readiness", "sleep", "hrv", "resting_hr", "run_distance", "training_load", "weight", "mood"];
 const RANGES = [7, 30, 90] as const;
 
-const qualityByKind: Record<string, string> = { readiness: "Calculated", training_load: "Calculated" };
-
 export default function InsightsPage() {
+  // 90 days is fetched once; the range buttons slice locally, so switching
+  // between 7/30/90 is instant and does not re-hit the backend.
+  const state = useApi<InsightsPayload>("/insights?days=90");
+  return <Loaded state={state}>{(data) => <Insights data={data} />}</Loaded>;
+}
+
+function Insights({ data }: { data: InsightsPayload }) {
   const [days, setDays] = useState<number>(30);
   const [compare, setCompare] = useState(true);
+  const { insights, metrics, personalRecords, syncSources } = data;
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-4 py-5 lg:px-6 lg:py-6">
@@ -49,27 +57,32 @@ export default function InsightsPage() {
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {BOARD.map((kind) => {
-          const m = getMetric(kind);
-          if (!m) return null;
+          const m = metrics[kind];
+          if (!m || !m.series.length) return null;
           const cur = m.series.slice(-days);
           const prev = m.series.slice(-2 * days, -days);
+          // With no earlier window there is nothing to compare against.
+          // Showing "+0.0" would read as "no change" rather than "no data".
+          const pm = prev.length ? mean(prev.map((p) => p.value)) : null;
           const cm = mean(cur.map((p) => p.value));
-          const pm = prev.length ? mean(prev.map((p) => p.value)) : cm;
-          const diff = cm - pm;
-          const good = (diff > 0) !== m.lowerBetter;
-          const sig = Math.abs(diff) > (Math.abs(pm) * 0.02 || 0.1);
+          const diff = pm === null ? null : cm - pm;
+          const good = diff !== null && (diff > 0) !== m.lowerBetter;
+          const sig = diff !== null && Math.abs(diff) > (Math.abs(pm!) * 0.02 || 0.1);
           return (
             <Link key={kind} href={`/insights/metric/${kind}`} style={domainStyle(m.domain)} className="rounded-xl border border-border bg-surface p-3 transition-colors hover:border-border-strong">
               <div className="flex items-center justify-between">
                 <span className="text-[12px] font-medium text-muted">{m.title}</span>
-                <span className={`size-2 rounded-full ${qualityByKind[kind] ? "bg-info" : "bg-good"}`} title={qualityByKind[kind] ?? "Measured"} />
+                <span className={cn("size-2 rounded-full", m.quality === "measured" ? "bg-good" : "bg-info")} title={m.quality === "measured" ? "Measured" : "Calculated"} />
               </div>
               <div className="mt-0.5 flex items-baseline gap-1">
                 <span className="tnum text-lg font-semibold text-text">{cm.toFixed(m.decimals)}</span>
                 {m.unit && <span className="text-[11px] text-faint">{m.unit}</span>}
                 {compare && (
-                  <span className={cn("tnum ml-auto text-[12px] font-medium", !sig ? "text-faint" : good ? "text-good" : "text-warn")}>
-                    {diff >= 0 ? "+" : ""}{diff.toFixed(m.decimals)}
+                  <span
+                    className={cn("tnum ml-auto text-[12px] font-medium", diff === null || !sig ? "text-faint" : good ? "text-good" : "text-warn")}
+                    title={diff === null ? `No data before the last ${days} days` : undefined}
+                  >
+                    {diff === null ? "—" : `${diff >= 0 ? "+" : ""}${diff.toFixed(m.decimals)}`}
                   </span>
                 )}
               </div>
@@ -84,31 +97,41 @@ export default function InsightsPage() {
         <section>
           <h2 className="mb-2 text-[15px] font-semibold tracking-tight text-text">Findings</h2>
           <p className="mb-3 text-[12.5px] text-muted">Each finding is labelled by how much to trust it — a measured fact, a calculation, an association in your own data, a hypothesis, or a recommendation.</p>
-          <InsightList insights={INSIGHTS} />
+          {insights.length ? (
+            <InsightList insights={insights} />
+          ) : (
+            <EmptyState title="No findings yet" body="ORION raises a finding when a metric moves off your own baseline. Nothing has." />
+          )}
         </section>
 
         <div className="space-y-5">
           <section>
             <h2 className="mb-2 text-[15px] font-semibold tracking-tight text-text">Personal records</h2>
-            <div className="space-y-1.5">
-              {STRENGTH.recentPRs.map((pr, i) => (
-                <div key={i} className="flex items-center gap-2.5 rounded-lg border border-border bg-surface p-2.5" style={domainStyle(pr.domain)}>
-                  <Trophy className="size-4 shrink-0 domain-text" />
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-text">{pr.label}</span>
-                  <span className="tnum text-[13px] font-semibold text-text">{pr.value}</span>
-                </div>
-              ))}
-            </div>
+            {personalRecords.length ? (
+              <div className="space-y-1.5">
+                {personalRecords.map((pr, i) => (
+                  <div key={i} className="flex items-center gap-2.5 rounded-lg border border-border bg-surface p-2.5" style={domainStyle(pr.domain)}>
+                    <Trophy className="size-4 shrink-0 domain-text" />
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-text">{pr.label}</span>
+                    {pr.value && <span className="tnum text-[13px] font-semibold text-text">{pr.value}</span>}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState title="No records logged" body="Log a strength session and ORION will track your bests." cta="Log" href="/log" />
+            )}
           </section>
 
           <section>
             <h2 className="mb-2 text-[15px] font-semibold tracking-tight text-text">Data quality</h2>
             <div className="rounded-lg border border-border bg-surface p-3">
               <ul className="space-y-1.5">
-                {SYNC_SOURCES.map((s) => (
-                  <li key={s.name} className="flex items-center justify-between text-[12.5px]">
-                    <span className="text-muted">{s.name}</span>
-                    <span className={cn("font-mono text-[11px]", s.status === "ok" ? "text-good" : s.status === "stale" ? "text-warn" : "text-faint")}>{s.status === "disconnected" ? "not connected" : s.freshness}</span>
+                {syncSources.map((s) => (
+                  <li key={s.name} className="flex items-center justify-between gap-2 text-[12.5px]">
+                    <span className="min-w-0 truncate text-muted">{s.name}</span>
+                    <span className={cn("shrink-0 font-mono text-[11px]", s.status === "ok" ? "text-good" : s.status === "stale" || s.status === "error" ? "text-warn" : "text-faint")}>
+                      {s.status === "disconnected" ? "not connected" : s.status === "mock" ? "sample data" : s.status === "error" ? "error" : s.freshness}
+                    </span>
                   </li>
                 ))}
               </ul>

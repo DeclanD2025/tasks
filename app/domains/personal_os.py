@@ -104,13 +104,28 @@ class DailyPlanItem:
 
 
 @dataclass(frozen=True)
+class ChangeRecord:
+    """One metric that has drifted off its own baseline."""
+
+    metric: str
+    direction: str  # up / down / elevated / lower / flat
+    delta: float
+    unit: str
+    tone: str  # good / watch / flat
+    text: str  # the rendered sentence
+
+    def __str__(self) -> str:  # templates iterate `changes` and print them
+        return self.text
+
+
+@dataclass(frozen=True)
 class RecoverySnapshot:
     score: float | None
     label: str
     estimated: bool
     factors: list[ScoreFactor]
     metrics: list[TodayMetric]
-    changes: list[str]
+    changes: list[ChangeRecord]
     recommendation: str
     data_quality: str
 
@@ -616,8 +631,19 @@ def _health_metric_cards(
     return cards
 
 
-def _what_changed(health: pd.DataFrame, activity: pd.DataFrame, extra: pd.DataFrame) -> list[str]:
-    changes: list[str] = []
+_NO_DRIFT = "No major drift detected in the available recent signals."
+
+
+def _what_changed(
+    health: pd.DataFrame, activity: pd.DataFrame, extra: pd.DataFrame
+) -> list[ChangeRecord]:
+    """Metrics that have moved off their own 7-day baseline, worst first.
+
+    Returns records rather than sentences so callers that need the parts —
+    which metric, which way, is that good — don't have to parse the prose
+    back apart. ``ChangeRecord.text`` is the sentence the Jinja app renders.
+    """
+    changes: list[ChangeRecord] = []
     checks = [
         ("sleep_minutes", health, "Sleep", False, "minutes"),
         ("hrv_ms", health, "HRV", False, "ms"),
@@ -640,8 +666,18 @@ def _what_changed(health: pd.DataFrame, activity: pd.DataFrame, extra: pd.DataFr
         else:
             direction = "up" if delta > 0 else "down"
         suffix = f" {unit}" if unit else ""
-        changes.append(f"{label} is {direction} vs 7-day baseline ({delta:+.1f}{suffix}).")
-    return changes[:5] or ["No major drift detected in the available recent signals."]
+        improving = (delta < 0) if lower else (delta > 0)
+        changes.append(ChangeRecord(
+            metric=label,
+            direction=direction,
+            delta=round(delta, 1),
+            unit=unit,
+            tone="good" if improving else "watch",
+            text=f"{label} is {direction} vs 7-day baseline ({delta:+.1f}{suffix}).",
+        ))
+    if not changes:
+        return [ChangeRecord("", "flat", 0.0, "", "flat", _NO_DRIFT)]
+    return changes[:5]
 
 
 def get_finance_operating_snapshot(user_id: int) -> FinanceOperatingSnapshot:
@@ -1365,10 +1401,20 @@ def _mindfulness_streak(sessions: list[MindfulnessSession]) -> int:
     return streak
 
 
-def get_today_snapshot(user_id: int) -> TodaySnapshot:
-    recovery = get_recovery_snapshot(user_id)
+def get_today_snapshot(
+    user_id: int,
+    recovery: RecoverySnapshot | None = None,
+    run_plan: RunPlanSnapshot | None = None,
+) -> TodaySnapshot:
+    """The Today read model.
+
+    ``recovery`` and ``run_plan`` are accepted so a caller that already needs
+    them (the JSON API renders both alongside this) can pass them in rather
+    than pay to rebuild the pandas frames a second time.
+    """
+    recovery = recovery or get_recovery_snapshot(user_id)
     finance = get_finance_operating_snapshot(user_id)
-    run_plan = get_run_plan_snapshot(user_id, recovery)
+    run_plan = run_plan or get_run_plan_snapshot(user_id, recovery)
     mind = get_mind_snapshot(user_id)
     workout = get_workout_tracker_snapshot(user_id)
 
@@ -1493,21 +1539,22 @@ def build_operating_insights(
 
     insights: list[OperatingInsight] = []
     for change in recovery.changes[:3]:
-        # The direction words carry good/bad: "up"/"lower" are favourable moves,
-        # "down"/"elevated" are adverse. Title, severity and action must match —
-        # a positive change should never read as "Recovery drift · keep intensity low".
-        adverse = " down " in change or "elevated" in change
-        favourable = " up " in change or "lower" in change
-        if adverse:
-            title, severity = "Recovery drift", "warning"
+        # Title, severity and action must match the direction of the move — a
+        # favourable change should never read as "Recovery drift · keep
+        # intensity low". The metric name is in the title so three drifting
+        # signals don't all surface as the same headline.
+        if change.tone == "watch":
+            title, severity = f"{change.metric} drift", "warning"
             action = recovery.recommendation
-        elif favourable:
-            title, severity = "Recovery improving", "info"
+        elif change.tone == "good":
+            title, severity = f"{change.metric} improving", "info"
             action = "A favourable shift — hold the habits that produced it."
         else:
             title, severity = "Recovery signal", "info"
             action = recovery.recommendation
-        insights.append(OperatingInsight(title, change, severity, "Recovery", action, recovery.data_quality))
+        insights.append(OperatingInsight(
+            title, change.text, severity, "Recovery", action, recovery.data_quality
+        ))
     if run_plan.week_distance_km > run_plan.weekly_target_km * 1.15:
         insights.append(OperatingInsight("Running volume jump", "This week's running distance is above the guardrail.", "warning", "Run Plan", "Make the next run easy or skip intensity.", "medium"))
     elif run_plan.week_distance_km < run_plan.weekly_target_km * 0.35:

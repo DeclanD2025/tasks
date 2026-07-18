@@ -124,6 +124,15 @@ METRIC_SPECS: dict[str, MetricSpec] = {
                        "on the Data tab.",
         related=("steps", "training_load"),
     ),
+    "respiratory_rate": MetricSpec(
+        "respiratory_rate", "Respiratory rate", "/min", HAE_SOURCE,
+        "Breaths per minute while asleep. Very stable night to night, which is "
+        "what makes a sustained rise worth noticing — it often moves before you "
+        "feel unwell.",
+        "Apple Watch sleeping respiratory rate, daily mean.",
+        "A rise on its own means little; read it next to resting HR and HRV.",
+        related=("resting_hr", "hrv", "sleep"),
+    ),
     "mindfulness": MetricSpec(
         "mindfulness", "Mindfulness", "min", "Apple Health + ORION sessions",
         "Minutes of deliberate attention practice. Consistency beats "
@@ -352,6 +361,8 @@ def _series_for(uid: int, kind: str, days: int) -> list[dict]:
         return _active_energy_series(uid, days)
     if kind == "mood":
         return _extra_series(uid, "mood", days)
+    if kind == "respiratory_rate":
+        return _extra_series(uid, "respiratory_rate", days)
     if kind == "mindfulness":
         return _mindfulness_series(uid, days)
     if kind == "stress":

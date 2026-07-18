@@ -1,21 +1,38 @@
-import { Check, Plus, Trophy } from "lucide-react";
+"use client";
+
+import { Plus, Trophy } from "lucide-react";
 import Link from "next/link";
 import { TrendChart } from "@/components/charts";
+import { Loaded } from "@/components/loading";
+import { EmptyState } from "@/components/patterns";
 import { Page } from "@/components/shell";
 import { Button, Card, Chip, DomainDot, Meta, SectionHeader } from "@/components/ui";
-import { type DomainKey, domainStyle } from "@/lib/domains";
-import { METRICS, RUN_PLAN, STRENGTH, weekPlan } from "@/lib/data";
-
-const intensityLabel = { easy: "Easy", moderate: "Moderate", hard: "Hard" } as const;
+import { useApi } from "@/lib/api";
+import { domainStyle } from "@/lib/domains";
+import type { PlanPayload, TrainingPayload } from "@/lib/payloads";
 
 export default function TrainingPage() {
-  const week = weekPlan();
-  const runPct = Math.round((RUN_PLAN.weekDoneKm / RUN_PLAN.weekTargetKm) * 100);
+  const state = useApi<TrainingPayload>("/training");
+  const plan = useApi<PlanPayload>("/plan");
+  return (
+    <Loaded state={state}>
+      {(data) => <Training data={data} week={plan.data?.week ?? []} />}
+    </Loaded>
+  );
+}
+
+function Training({ data, week }: { data: TrainingPayload; week: PlanPayload["week"] }) {
+  const { runPlan, strength, metrics } = data;
+  const runPct = runPlan.weekTargetKm
+    ? Math.round((runPlan.weekDoneKm / runPlan.weekTargetKm) * 100)
+    : 0;
+  const load = metrics.training_load;
+  const remaining = Math.max(0, runPlan.weekTargetKm - runPlan.weekDoneKm);
 
   return (
     <Page
       title="Training"
-      eyebrow={`Sub-45 10k · ${RUN_PLAN.phase}`}
+      eyebrow={`${runPlan.goal} · ${runPlan.phase}`}
       rail={
         <>
           <Card className="p-4">
@@ -30,20 +47,19 @@ export default function TrainingPage() {
           </Card>
 
           <Card className="p-4">
-            <SectionHeader title="Recent PRs" />
-            <ul className="space-y-2">
-              {STRENGTH.recentPRs.map((pr, i) => (
-                <li key={i} className="flex items-center gap-2.5" style={domainStyle(pr.domain)}>
-                  <Trophy className="size-4 shrink-0 domain-text" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-medium text-text">{pr.label}</p>
-                    <Meta>{pr.when}</Meta>
-                  </div>
-                  <span className="tnum shrink-0 text-[13px] font-semibold text-text">{pr.value}</span>
-                  {pr.isNew && <span className="rounded-full bg-good/15 px-1.5 py-px text-[10px] font-semibold text-good">New</span>}
-                </li>
-              ))}
-            </ul>
+            <SectionHeader title="Personal bests" />
+            {strength.personalBests.length ? (
+              <ul className="space-y-2">
+                {strength.personalBests.map((pb, i) => (
+                  <li key={i} className="flex items-center gap-2.5" style={domainStyle("strength")}>
+                    <Trophy className="size-4 shrink-0 domain-text" />
+                    <p className="min-w-0 flex-1 text-[13px] font-medium text-text">{pb}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <EmptyState title="None logged" body="Log a strength session and ORION tracks your bests." cta="Log" href="/log" />
+            )}
           </Card>
         </>
       }
@@ -54,30 +70,24 @@ export default function TrainingPage() {
         <div className="p-4 sm:p-5" style={domainStyle("running")}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wide domain-text">Next session · today 12:30</span>
-                <span className="rounded-full bg-warn/15 px-1.5 py-px text-[10px] font-semibold text-warn">Adjusted for recovery</span>
-              </div>
-              <h2 className="mt-1 text-lg font-semibold tracking-tight text-text">{RUN_PLAN.nextRun.title}</h2>
+              <span className="text-[11px] font-semibold uppercase tracking-wide domain-text">
+                Next session · {runPlan.nextRun.dayLabel}
+              </span>
+              <h2 className="mt-1 text-lg font-semibold tracking-tight text-text">{runPlan.nextRun.title}</h2>
             </div>
             <Button href="/log?for=run" variant="accent" domain="running" size="sm">Start session</Button>
           </div>
-          <ol className="mt-3 space-y-1.5">
-            {RUN_PLAN.nextRun.structure.map((s) => (
-              <li key={s.part} className="flex items-center gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2">
-                <span className="w-20 shrink-0 text-[12px] font-medium text-muted">{s.part}</span>
-                <span className="flex-1 text-[13px] text-text">{s.detail}</span>
-                <Chip>{intensityLabel[s.intensity]}</Chip>
-              </li>
-            ))}
-          </ol>
-          <Meta className="mt-2 block">Estimated {RUN_PLAN.nextRun.estMin} min</Meta>
+          <div className="mt-3 flex items-center gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2">
+            <span className="flex-1 text-[13px] text-text">{runPlan.nextRun.detail}</span>
+            <Chip>{runPlan.nextRun.intensity}</Chip>
+          </div>
+          <Meta className="mt-2 block">{runPlan.nextRun.distanceKm.toFixed(1)} km</Meta>
         </div>
       </Card>
 
-      {/* Week schedule */}
+      {/* Week recorded */}
       <Card className="p-4 sm:p-5">
-        <SectionHeader title="This week" sub={`${RUN_PLAN.adherence} · ${RUN_PLAN.phase}`} action={<Link href="/plan" className="text-[12px] font-medium text-muted hover:text-text">Edit plan →</Link>} />
+        <SectionHeader title="This week" sub={`Recorded activity · ${runPlan.adherence}`} action={<Link href="/plan" className="text-[12px] font-medium text-muted hover:text-text">Full plan →</Link>} />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
           {week.map((day) => (
             <div key={day.date} className={`rounded-lg border p-2 ${day.isToday ? "border-border-strong bg-surface-2" : "border-border bg-surface"}`}>
@@ -90,17 +100,12 @@ export default function TrainingPage() {
                   <p className="py-1 text-[11px] text-faint">Rest</p>
                 ) : (
                   day.sessions.map((s) => (
-                    <div key={s.id} className="rounded-md border border-border px-1.5 py-1" style={domainStyle(s.domain as DomainKey)}>
+                    <div key={s.id} className="rounded-md border border-border px-1.5 py-1" style={domainStyle(s.domain)}>
                       <div className="flex items-center gap-1">
                         <DomainDot domain={s.domain} />
                         <span className="truncate text-[11px] font-medium text-text">{s.title}</span>
                       </div>
                       <p className="truncate text-[10px] text-muted">{s.detail}</p>
-                      <div className="mt-0.5 flex items-center gap-1">
-                        {s.status === "done" && <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-good"><Check className="size-3" />Done</span>}
-                        {s.status === "adjusted" && <span className="text-[10px] font-medium text-warn">Adjusted</span>}
-                        {s.status === "planned" && <span className="text-[10px] text-faint">{s.durationMin}m</span>}
-                      </div>
                     </div>
                   ))
                 )}
@@ -114,14 +119,14 @@ export default function TrainingPage() {
       <div className="grid gap-4 sm:grid-cols-2">
         <Card className="p-4" as="section">
           <div style={domainStyle("running")}>
-            <SectionHeader title="Weekly running" action={<span className="tnum text-[13px] font-semibold text-text">{RUN_PLAN.weekDoneKm}<span className="text-faint"> / {RUN_PLAN.weekTargetKm} km</span></span>} />
+            <SectionHeader title="Weekly running" action={<span className="tnum text-[13px] font-semibold text-text">{runPlan.weekDoneKm.toFixed(1)}<span className="text-faint"> / {runPlan.weekTargetKm.toFixed(0)} km</span></span>} />
             <div className="h-2 overflow-hidden rounded-full bg-surface-inset">
               <div className="h-full rounded-full domain-bar" style={{ width: `${Math.min(100, runPct)}%` }} />
             </div>
             <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
-              <Kpi label="4-wk avg" value={`${RUN_PLAN.fourWeekAvgKm} km`} />
-              <Kpi label="Avg pace" value={RUN_PLAN.avgPace} />
-              <Kpi label="Left" value={`${(RUN_PLAN.weekTargetKm - RUN_PLAN.weekDoneKm).toFixed(1)} km`} />
+              <Kpi label="Avg distance" value={`${runPlan.fourWeekAvgKm.toFixed(1)} km`} />
+              <Kpi label="Avg pace" value={runPlan.avgPace} />
+              <Kpi label="Left" value={`${remaining.toFixed(1)} km`} />
             </dl>
             <Link href="/insights/metric/run_distance" className="mt-2 inline-block text-[12px] font-medium text-muted hover:text-text">Distance trend →</Link>
           </div>
@@ -129,27 +134,23 @@ export default function TrainingPage() {
 
         <Card className="p-4" as="section">
           <div style={domainStyle("strength")}>
-            <SectionHeader title="Strength consistency" action={<span className="tnum text-[13px] font-semibold text-text">{STRENGTH.weekSessions}<span className="text-faint"> / {STRENGTH.weekTarget}</span></span>} />
-            <div className="flex gap-1.5">
-              {Array.from({ length: STRENGTH.weekTarget }).map((_, i) => (
-                <span key={i} className={`h-2 flex-1 rounded-full ${i < STRENGTH.weekSessions ? "domain-bar" : "bg-surface-inset"}`} />
-              ))}
-            </div>
-            <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
-              <Kpi label="Sets" value={String(STRENGTH.weekSets)} />
-              <Kpi label="Volume" value={`${(STRENGTH.weekVolumeKg / 1000).toFixed(1)}t`} />
-              <Kpi label="Next" value={STRENGTH.nextBias} />
+            <SectionHeader title="Strength consistency" action={<span className="tnum text-[13px] font-semibold text-text">{strength.weekSessions}<span className="text-faint"> this week</span></span>} />
+            <dl className="mt-1 grid grid-cols-2 gap-2 text-center">
+              <Kpi label="Sessions (30d)" value={String(strength.recentSessions.length)} />
+              <Kpi label="Volume" value={strength.weekVolumeKg >= 1000 ? `${(strength.weekVolumeKg / 1000).toFixed(1)}t` : `${strength.weekVolumeKg.toFixed(0)}kg`} />
             </dl>
-            <p className="mt-2 text-[12px] text-muted">{STRENGTH.lastTrained}</p>
+            {strength.progressionInsight && <p className="mt-2 text-[12px] text-muted">{strength.progressionInsight}</p>}
           </div>
         </Card>
       </div>
 
       {/* Load */}
-      <Card className="p-4 sm:p-5">
-        <SectionHeader title="Training load — 45 days" sub={METRICS.training_load.interpretation} action={<Link href="/insights/metric/training_load" className="text-[12px] font-medium text-muted hover:text-text">Detail →</Link>} />
-        <TrendChart series={METRICS.training_load.series} domain="running" baseline={METRICS.training_load.baseline30} decimals={0} rolling={7} />
-      </Card>
+      {load && load.series.length > 0 && (
+        <Card className="p-4 sm:p-5">
+          <SectionHeader title="Training load" sub={load.interpretation} action={<Link href="/insights/metric/training_load" className="text-[12px] font-medium text-muted hover:text-text">Detail →</Link>} />
+          <TrendChart series={load.series} domain="running" baseline={load.baseline30} decimals={0} rolling={7} />
+        </Card>
+      )}
     </Page>
   );
 }

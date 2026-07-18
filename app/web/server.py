@@ -133,7 +133,11 @@ def create_app() -> FastAPI:
         path = request.url.path
         open_path = path.startswith("/static") or path in _OPEN_PATHS
         if not open_path and not authed(request):
-            if queued_request(request):
+            # API callers get a status they can act on. Redirecting them to the
+            # login page instead would hand the Next UI an HTML body where it
+            # expects JSON, and it would fail as a parse error rather than as
+            # "your session expired".
+            if queued_request(request) or path.startswith("/api/"):
                 return JSONResponse({"status": "login_required"}, status_code=401)
             return RedirectResponse("/login", status_code=303)
         return await call_next(request)
