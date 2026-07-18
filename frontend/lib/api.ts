@@ -40,6 +40,47 @@ export async function getJson<T>(path: string, signal?: AbortSignal): Promise<T>
   return (await response.json()) as T;
 }
 
+/** A write ORION refused, carrying the reason it gave.
+ *
+ * plan_service validates and returns its message as a 400, so the UI can show
+ * the actual objection ("A habit cannot be ticked for a future day") instead
+ * of a generic failure.
+ */
+export class ApiRejected extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ApiRejected";
+  }
+}
+
+/** POST / PATCH / DELETE. Same session rules as `getJson`. */
+export async function sendJson<T>(
+  path: string,
+  method: "POST" | "PATCH" | "DELETE",
+  body?: unknown,
+): Promise<T> {
+  const response = await fetch(`/api/v2${path}`, {
+    method,
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (response.status === 401) throw new SessionExpired();
+  if (!response.ok) {
+    // A 400 is a considered refusal with a message; anything else is a fault.
+    const reason = await response
+      .json()
+      .then((data: { error?: string }) => data.error)
+      .catch(() => null);
+    if (response.status === 400 && reason) throw new ApiRejected(reason);
+    throw new Error(reason || `ORION returned ${response.status} for ${path}`);
+  }
+  return (await response.json()) as T;
+}
+
 /**
  * Fetch one endpoint for the lifetime of a page.
  *

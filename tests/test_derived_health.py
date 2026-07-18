@@ -108,3 +108,16 @@ def test_hr_max_estimated_from_workouts(fresh_user: int):
     assert derived.estimate_hr_max(fresh_user) == derived.DEFAULT_HR_MAX
     _add_workout(fresh_user, day_offset=2, minutes=30, avg_hr=150, max_hr=192)
     assert derived.estimate_hr_max(fresh_user) == 192.0
+
+
+def test_training_load_is_computed_not_stored():
+    """`activity_metrics_daily.training_load` is null in practice and is not
+    the source of truth — the metric is Edwards TRIMP computed live from
+    workout heart-rate data. A stored daily figure would go stale the moment a
+    workout was backfilled, so the null column must stay unread."""
+    from app.domains.health import metric_details
+
+    series = metric_details._series_for(1, "training_load", 30)
+    assert series, "training load must produce a series without the stored column"
+    # Every point is derived, and rest days are a real 0.0 rather than a gap.
+    assert all(point["value"] is not None for point in series)

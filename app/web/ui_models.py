@@ -7,20 +7,19 @@ place that translation happens.
 
 It computes nothing new: no scoring, no interpretation beyond phrasing a
 comparison that the numbers already contain. Where ORION has no producer for
-something the UI can display — habits and goals have no table — the payload
-returns an empty list and an ``unavailable`` note. It never invents a value to
-fill a slot.
+something the UI can display, the payload returns an empty list and an
+``unavailable`` note. It never invents a value to fill a slot.
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from statistics import mean
 
 from app import services
 from app.db.database import session_scope
 from app.db.models import DataSource, SourceStatus, User
-from app.domains import personal_os, strength
+from app.domains import personal_os, plan_service, strength
 from app.domains.health import derived, metric_details
 from app.web import presentation
 
@@ -720,14 +719,19 @@ def training(uid: int) -> dict:
 _INTENSITY = {"easy": "easy", "low": "easy", "moderate": "moderate", "hard": "hard"}
 
 
-def _week(uid: int) -> list[dict]:
-    """Mon–Sun of the current week: what actually happened on each day.
+def _week(uid: int, run_plan: personal_os.RunPlanSnapshot | None = None) -> list[dict]:
+    """Mon–Sun of the current week: what happened, and what is planned.
 
-    Deliberately not the plan. ORION's run plan schedules sessions relative to
-    now ("Next", "Midweek", "Weekend") and never commits them to a weekday, so
-    placing them on the grid would be the UI inventing a fact the planner
-    declined to state. The grid shows recorded activity; the plan is listed
-    separately under the labels the planner actually uses.
+    The planner used to schedule relative to now ("Next"/"Midweek"/"Weekend")
+    and never commit to a weekday, so this grid could only show recorded
+    activity — placing a plan on a day would have been the UI inventing a fact
+    the planner declined to state. The planner now derives real dates from the
+    athlete's own running history, so planned sessions can sit on the grid.
+
+    Recorded and planned stay visibly distinct: a recorded session is a fact, a
+    planned one is an intention, and ``status`` carries which is which. A plan
+    for a day already past is dropped rather than shown as missed — the
+    planner only ever schedules forward.
     """
     today_date = date.today()
     monday = date.fromordinal(today_date.toordinal() - today_date.weekday())
@@ -748,6 +752,14 @@ def _week(uid: int) -> list[dict]:
             return "loaded"
         return "light"
 
+    # Planned sessions, keyed by the day the planner committed them to.
+    snapshot = run_plan or personal_os.get_run_plan_snapshot(uid)
+    planned_by_day: dict[str, list] = {}
+    for session in snapshot.weekly_plan:
+        if session.day is None or session.day < today_date:
+            continue  # never surface a plan for a day that has already gone
+        planned_by_day.setdefault(session.day.isoformat(), []).append(session)
+
     days: list[dict] = []
     for offset in range(7):
         day = date.fromordinal(monday.toordinal() + offset)
@@ -763,6 +775,19 @@ def _week(uid: int) -> list[dict]:
                 "durationMin": 0,
                 "intensity": "moderate",
                 "status": "done",
+            })
+        for index, session in enumerate(planned_by_day.get(iso, [])):
+            sessions.append({
+                "id": f"planned-{iso}-{index}",
+                "domain": "running",
+                "title": session.session_type,
+                "detail": f"{session.distance_km:.1f} km planned",
+                "durationMin": 0,
+                "intensity": _INTENSITY.get(session.intensity, "moderate"),
+                "status": "planned",
+                # Whether the weekday was inferred from real history or is a
+                # fallback spread, so the UI need not present them alike.
+                "daySource": session.day_source,
             })
         days.append({
             "date": iso,
@@ -790,27 +815,105 @@ def _planned_sessions(
             "distanceKm": session.distance_km,
             "sessionType": session.session_type,
             "intensity": _INTENSITY.get(session.intensity, "moderate"),
+            # Whether the weekday was inferred from the athlete's own history
+            # or is an evenly-spread fallback.
+            "daySource": session.day_source,
         }
         for index, session in enumerate(snapshot.weekly_plan)
     ]
 
 
-def plan(uid: int) -> dict:
-    """The week: what was recorded, and what ORION plans next.
+def habit_view(view: plan_service.HabitView) -> dict:
+    """One habit in the shape of the TS ``Habit``.
 
-    Habits and goals have no table in ORION yet, so they come back empty with
-    the reason attached — the UI shows an honest empty state rather than
-    plausible-looking placeholders.
+    ``weekTicks`` is Mon–Sun of the current week. Days after today are None
+    rather than False: a habit is not yet missed on a day that has not
+    happened, and rendering them alike would show a week of failures every
+    Monday morning.
     """
+    today_date = date.today()
+    monday = today_date - timedelta(days=today_date.weekday())
+    done = {entry["day"] for entry in view.history}
+
+    week: list[bool | None] = []
+    for offset in range(7):
+        day = monday + timedelta(days=offset)
+        week.append(None if day > today_date else day.isoformat() in done)
+
     return {
-        "week": _week(uid),
-        "planned": _planned_sessions(uid),
-        "habits": [],
-        "goals": [],
-        "unavailable": {
-            "habits": "ORION has no habit store yet — nothing is being tracked.",
-            "goals": "ORION has no goal store yet — nothing is being tracked.",
-        },
+        "id": str(view.id),
+        "name": view.name,
+        "detail": view.detail,
+        "domain": view.domain,
+        "cadence": view.cadence,
+        "streak": view.streak,
+        "bestStreak": view.best_streak,
+        "periodDone": view.period_done,
+        "periodTarget": view.period_target,
+        "completionRate": view.completion_rate,
+        "weekTicks": week,
+        "doneToday": view.done_today,
+    }
+
+
+def goal_view(view: plan_service.GoalView) -> dict:
+    """One goal in the shape of the TS ``Goal``.
+
+    ``source`` travels with it so the UI can distinguish a measured goal from
+    a hand-maintained one, and say when progress cannot be computed at all
+    rather than drawing an empty bar that reads as zero progress.
+    """
+    def fmt(value: float | None) -> str:
+        if value is None:
+            return "—"
+        text = f"{value:,.1f}".rstrip("0").rstrip(".")
+        return f"{text} {view.unit}".strip()
+
+    if view.days_remaining is None:
+        due = "no deadline"
+    elif view.days_remaining < 0:
+        due = f"{abs(view.days_remaining)}d overdue"
+    elif view.days_remaining == 0:
+        due = "due today"
+    else:
+        due = f"{view.days_remaining}d left"
+
+    return {
+        "id": str(view.id),
+        "title": view.title,
+        "detail": view.detail,
+        "domain": view.domain,
+        "progress": view.progress,
+        "metricLabel": (
+            metric_details.METRIC_SPECS[view.metric_kind].title
+            if view.metric_kind and view.metric_kind in metric_details.METRIC_SPECS
+            else "Tracked by hand"
+        ),
+        "current": fmt(view.current_value),
+        "target": fmt(view.target_value),
+        "dueLabel": due,
+        "source": view.source,
+        "direction": view.direction,
+        "status": view.status,
+    }
+
+
+def plan(uid: int) -> dict:
+    """The week: what was recorded, and what ORION plans next."""
+    habits = plan_service.list_habits(uid)
+    goals = plan_service.list_goals(uid)
+    # Built once and threaded into both: the snapshot rebuilds pandas frames
+    # from SQLite, and the grid and the session list want the same one.
+    run_plan = personal_os.get_run_plan_snapshot(uid)
+    return {
+        "week": _week(uid, run_plan),
+        "planned": _planned_sessions(uid, run_plan),
+        "habits": [habit_view(h) for h in habits],
+        "goals": [goal_view(g) for g in goals],
+        # Nothing tracked is now a real empty state — the store exists, it is
+        # simply empty — so the copy invites the first entry rather than
+        # explaining a missing feature.
+        "unavailable": {},
     }
 
 

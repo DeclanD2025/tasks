@@ -116,14 +116,17 @@ export type TrainingPayload = {
 export type PlannedSession = {
   id: string;
   domain: string;
-  /** The planner's own label — "Next", "Midweek", "Weekend". It does not
-   *  commit sessions to a weekday, so neither does the UI. */
+  /** The day the planner committed this to, e.g. "Tue 21 Jul". */
   when: string;
   title: string;
   detail: string;
   distanceKm: number;
   sessionType: string;
   intensity: string;
+  /** "observed" when the weekday came from the athlete's own running history,
+   *  "spread" when there was too little history and this is an even fallback.
+   *  A default must not be presented as a finding. */
+  daySource: "observed" | "spread";
 };
 
 export type PlanPayload = {

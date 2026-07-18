@@ -289,6 +289,12 @@ class ActivityMetricDaily(Base):
     day: Mapped[date] = mapped_column(Date, index=True)
     steps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     active_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # NOT the source of truth for training load, and null in practice. The
+    # `training_load` metric is computed live from workout heart-rate data as
+    # Edwards TRIMP (`derived.get_strain_days`), because a stored daily figure
+    # would go stale the moment a workout was backfilled or corrected. Kept as
+    # a column only so an importer that has a vendor-supplied load has
+    # somewhere to put it; read `derived` instead.
     training_load: Mapped[float | None] = mapped_column(Float, nullable=True)
     deep_work_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     extra: Mapped[dict] = mapped_column(JSON, default=dict)

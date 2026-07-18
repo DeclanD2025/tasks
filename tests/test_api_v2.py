@@ -7,6 +7,8 @@ invents a number to fill an empty slot.
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -118,19 +120,20 @@ def test_changes_carry_their_own_tone(authed: TestClient):
         assert change["text"]
 
 
-def test_habits_and_goals_are_empty_and_say_why(authed: TestClient):
-    """ORION has no habit or goal store. The UI must be told that, not handed
-    plausible-looking placeholders."""
+def test_habits_and_goals_have_a_real_store(authed: TestClient):
+    """Habits and goals are backed by tables now, so an empty list means "none
+    created" — not "no such feature". The ``unavailable`` note that stood in
+    for the missing store must be gone."""
     payload = authed.get("/api/v2/plan").json()
-    assert payload["habits"] == []
-    assert payload["goals"] == []
-    assert payload["unavailable"]["habits"]
-    assert payload["unavailable"]["goals"]
+    assert isinstance(payload["habits"], list)
+    assert isinstance(payload["goals"], list)
+    assert payload["unavailable"] == {}
 
 
-def test_week_grid_is_recorded_activity_not_the_plan(authed: TestClient):
-    """The run planner schedules relative to now ("Next", "Midweek") and never
-    names a weekday, so nothing in the Mon–Sun grid may be a planned session."""
+def test_week_grid_separates_recorded_from_planned(authed: TestClient):
+    """The planner now derives real weekdays from running history, so plans may
+    sit on the grid — but a recorded session is a fact and a planned one is an
+    intention, and ``status`` has to keep them apart."""
     payload = authed.get("/api/v2/plan").json()
     week = payload["week"]
     assert len(week) == 7
@@ -138,9 +141,26 @@ def test_week_grid_is_recorded_activity_not_the_plan(authed: TestClient):
     assert sum(day["isToday"] for day in week) == 1
     for day in week:
         for session in day["sessions"]:
-            assert session["status"] == "done"
+            assert session["status"] in {"done", "planned"}
+
+
+def test_the_grid_never_plans_a_day_that_has_passed(authed: TestClient):
+    """The planner only schedules forward; a past day showing a plan would read
+    as a session missed, which is a claim ORION has not made."""
+    payload = authed.get("/api/v2/plan").json()
+    today_iso = date.today().isoformat()
+    for day in payload["week"]:
+        if day["date"] < today_iso:
+            assert all(s["status"] == "done" for s in day["sessions"])
+
+
+def test_planned_sessions_name_a_weekday_and_own_their_confidence(authed: TestClient):
+    payload = authed.get("/api/v2/plan").json()
     for session in payload["planned"]:
-        assert session["when"]  # the planner's own label survives
+        assert session["when"]
+        # No positional labels survive — the planner commits to a day now.
+        assert session["when"] not in {"Next", "Midweek", "Weekend"}
+        assert session["daySource"] in {"observed", "spread"}
 
 
 def test_recommendation_body_explains_the_recommendation(authed: TestClient):

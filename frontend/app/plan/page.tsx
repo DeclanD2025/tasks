@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Loaded } from "@/components/loading";
 import { EmptyState } from "@/components/patterns";
 import { Page } from "@/components/shell";
-import { Card, DomainDot, SectionHeader } from "@/components/ui";
+import { Card, DomainDot, Meta, SectionHeader } from "@/components/ui";
 import { useApi } from "@/lib/api";
 import { type DomainKey, domainStyle } from "@/lib/domains";
 import type { PlanPayload, TrainingPayload } from "@/lib/payloads";
@@ -24,7 +24,7 @@ export default function PlanPage() {
 }
 
 function Plan({ data, runPlan }: { data: PlanPayload; runPlan?: TrainingPayload["runPlan"] }) {
-  const { week, planned, habits, goals, unavailable } = data;
+  const { week, planned, habits, goals } = data;
 
   return (
     <Page
@@ -62,7 +62,14 @@ function Plan({ data, runPlan }: { data: PlanPayload; runPlan?: TrainingPayload[
     >
       {/* Planned sessions — under the planner's own relative labels */}
       <Card className="p-4 sm:p-5">
-        <SectionHeader title="Planned sessions" sub="ORION schedules these relative to now, not to fixed weekdays." />
+        <SectionHeader
+          title="Planned sessions"
+          sub={
+            planned.some((s) => s.daySource === "observed")
+              ? "Placed on the weekdays you actually run."
+              : "Evenly spread — not enough run history yet to place these on your own days."
+          }
+        />
         {planned.length ? (
           <ul className="space-y-2">
             {planned.map((s) => (
@@ -93,11 +100,20 @@ function Plan({ data, runPlan }: { data: PlanPayload; runPlan?: TrainingPayload[
               </div>
               {day.loadBand && <div className={`mb-1.5 h-1 rounded-full ${loadTone[day.loadBand]}`} title={`Load: ${day.loadBand}`} />}
               <div className="flex-1 space-y-1">
+                {/* A recorded session is a fact; a planned one is an
+                    intention. The dashed border keeps the two from reading
+                    alike on the same grid. */}
                 {day.sessions.map((s) => (
-                  <div key={s.id} className="rounded-md border border-border px-1.5 py-1" style={domainStyle(s.domain as DomainKey)}>
+                  <div
+                    key={s.id}
+                    className={`rounded-md px-1.5 py-1 ${s.status === "planned" ? "border border-dashed border-border-strong" : "border border-border"}`}
+                    style={domainStyle(s.domain as DomainKey)}
+                  >
                     <div className="flex items-center gap-1">
                       <DomainDot domain={s.domain} />
-                      <span className="truncate text-[11px] font-medium text-text">{s.title}</span>
+                      <span className={`truncate text-[11px] font-medium ${s.status === "planned" ? "text-muted" : "text-text"}`}>
+                        {s.title}
+                      </span>
                     </div>
                     <p className="truncate text-[10px] text-muted">{s.detail}</p>
                   </div>
@@ -119,8 +135,12 @@ function Plan({ data, runPlan }: { data: PlanPayload; runPlan?: TrainingPayload[
                   <DomainDot domain={h.domain} />
                   <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-text">{h.name}</span>
                   <div className="flex gap-0.5">
+                    {/* null = later this week: not done, but not missed */}
                     {h.weekTicks.map((t, i) => (
-                      <span key={i} className={`size-2 rounded-[2px] ${t ? "domain-bar" : "bg-surface-inset"}`} />
+                      <span
+                        key={i}
+                        className={`size-2 rounded-[2px] ${t === null ? "border border-dashed border-border" : t ? "domain-bar" : "bg-surface-inset"}`}
+                      />
                     ))}
                   </div>
                   <span className="tnum w-10 text-right text-[12px] font-medium text-muted">{h.streak}d</span>
@@ -128,7 +148,7 @@ function Plan({ data, runPlan }: { data: PlanPayload; runPlan?: TrainingPayload[
               ))}
             </ul>
           ) : (
-            <EmptyState title="Not tracked yet" body={unavailable.habits} />
+            <EmptyState title="No habits yet" body="Track something you want to keep up." cta="Add one" href="/plan/habits" />
           )}
         </Card>
 
@@ -142,14 +162,21 @@ function Plan({ data, runPlan }: { data: PlanPayload; runPlan?: TrainingPayload[
                     <span className="text-[13px] font-medium text-text">{g.title}</span>
                     <span className="tnum text-[12px] text-muted">{g.current} → {g.target}</span>
                   </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-surface-inset">
-                    <div className="h-full rounded-full domain-bar" style={{ width: `${g.progress * 100}%` }} />
-                  </div>
+                  {/* No bar when progress cannot be computed — an empty track
+                      would read as "no progress", which is a different claim
+                      from "not measurable". */}
+                  {g.progress !== null ? (
+                    <div className="h-1.5 overflow-hidden rounded-full bg-surface-inset">
+                      <div className="h-full rounded-full domain-bar" style={{ width: `${g.progress * 100}%` }} />
+                    </div>
+                  ) : (
+                    <Meta>Needs a target to show progress</Meta>
+                  )}
                 </li>
               ))}
             </ul>
           ) : (
-            <EmptyState title="Not tracked yet" body={unavailable.goals} />
+            <EmptyState title="No goals yet" body="Set something measurable to work toward." cta="Add one" href="/plan/goals" />
           )}
         </Card>
       </div>

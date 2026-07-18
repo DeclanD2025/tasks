@@ -136,6 +136,8 @@ export type PlannedSession = {
   durationMin: number;
   intensity: "easy" | "moderate" | "hard";
   status: "planned" | "done" | "adjusted";
+  /** Only on planned entries: how the weekday was arrived at. */
+  daySource?: "observed" | "spread";
 };
 
 export type DayPlan = {
@@ -150,23 +152,38 @@ export type DayPlan = {
 export type Habit = {
   id: string;
   name: string;
+  detail: string | null;
   domain: DomainKey;
   cadence: string;
   streak: number;
-  weekTicks: boolean[]; // Mon..Sun
+  bestStreak: number;
+  periodDone: number;
+  periodTarget: number;
+  completionRate: number; // 0..1, judged against the habit's own target
+  /** Mon..Sun. `null` means later this week — not done, but not missed
+   *  either, so it must not render like a failure. */
+  weekTicks: (boolean | null)[];
   doneToday: boolean;
 };
 
 export type Goal = {
   id: string;
   title: string;
+  detail: string | null;
   domain: DomainKey;
-  progress: number; // 0..1
+  /** 0..1, or null when progress cannot be computed honestly — no target, or
+   *  a decrease goal with no baseline to measure the fall from. Null must not
+   *  render as a zero-width bar; that reads as "no progress", a different claim. */
+  progress: number | null;
   metricLabel: string;
   current: string;
   target: string;
   dueLabel: string;
-  projection: string;
+  /** Where the current value came from, so a measured goal and a
+   *  hand-maintained one are not presented as equally solid. */
+  source: "measured" | "manual" | "none";
+  direction: "increase" | "decrease";
+  status: string;
 };
 
 export type SyncSource = {
