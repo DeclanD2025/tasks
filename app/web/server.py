@@ -61,7 +61,28 @@ def _secure_cookies() -> bool:
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):  # pragma: no cover - trivial
     init_db()
+    _ensure_strength_catalog()
     yield
+
+
+def _ensure_strength_catalog() -> None:
+    """Seed and classify the exercise library on boot.
+
+    The seeded exercises arrive with free-text movement patterns and no family,
+    which the analytics cannot group on. Classification is idempotent and only
+    fills fields still at their default, so a hand-corrected exercise survives
+    the next deploy untouched.
+
+    Failure here must not stop the server: an unclassified catalogue degrades
+    the analytics, while a server that will not boot loses everything.
+    """
+    try:
+        from app.domains.strength import catalog, tracker
+
+        tracker.ensure_seeded()
+        catalog.enrich_catalog()
+    except Exception:  # pragma: no cover - defensive
+        log.exception("Could not prepare the strength catalogue; continuing without it.")
 
 
 def create_app() -> FastAPI:

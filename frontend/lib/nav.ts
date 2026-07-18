@@ -21,6 +21,7 @@ import {
   Sparkles,
   Utensils,
   Wallet,
+  Weight,
 } from "lucide-react";
 
 export type NavItem = {
@@ -55,6 +56,7 @@ export const SIDEBAR_GROUPS: NavGroup[] = [
     label: "Plan & record",
     items: [
       { key: "training", label: "Training", href: "/training", icon: Dumbbell },
+      { key: "strength", label: "Strength", href: "/training/strength", icon: Weight },
       { key: "nutrition", label: "Nutrition", href: "/nutrition", icon: Utensils },
       { key: "habits", label: "Habits", href: "/plan/habits", icon: Repeat },
       { key: "journal", label: "Journal", href: "/mind", icon: BookOpen },
@@ -85,6 +87,7 @@ export const MORE_ITEMS: NavItem[] = [
   { key: "health", label: "Health", href: "/health", icon: HeartPulse },
   { key: "recovery", label: "Recovery", href: "/recovery", icon: Activity },
   { key: "training", label: "Training", href: "/training", icon: Dumbbell },
+  { key: "strength", label: "Strength", href: "/training/strength", icon: Weight },
   { key: "nutrition", label: "Nutrition", href: "/nutrition", icon: Utensils },
   { key: "mind", label: "Mind", href: "/mind", icon: Moon },
   { key: "medication", label: "Medication", href: "/medication", icon: Pill },

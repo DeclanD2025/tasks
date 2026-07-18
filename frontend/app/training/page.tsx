@@ -38,7 +38,7 @@ function Training({ data, week }: { data: TrainingPayload; week: PlanPayload["we
           <Card className="p-4">
             <SectionHeader title="Log a session" />
             <div className="space-y-2">
-              <Button href="/log?for=strength" variant="accent" domain="strength" size="md" className="w-full">
+              <Button href="/training/strength" variant="accent" domain="strength" size="md" className="w-full">
                 <Plus className="size-4" /> Start strength workout
               </Button>
               <Button href="/log?for=run" variant="ghost" size="md" className="w-full">Log run / cardio</Button>

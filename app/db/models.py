@@ -35,6 +35,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -602,39 +603,102 @@ class ExerciseSet(Base):
 # Strength training — active workout tracker
 # --------------------------------------------------------------------------- #
 class StrengthExercise(Base):
-    """Seeded or custom strength exercise metadata."""
+    """Seeded or custom strength exercise metadata.
+
+    ``family_slug`` is what makes variants tractable. Barbell bench, paused
+    bench and close-grip bench are three distinct exercises — comparing their
+    loads directly would be dishonest — but they answer the same question about
+    horizontal pressing strength. Analytics can therefore roll up at four
+    levels: exact exercise, family, movement pattern, muscle group.
+
+    A string slug rather than a self-FK on purpose: seed data can declare its
+    family without ID juggling, and an exercise archived years later does not
+    orphan its variants.
+    """
 
     __tablename__ = "strength_exercises"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     slug: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(160), index=True)
+    #: Operator's own label. Falls back to ``name`` when blank — renaming must
+    #: never orphan history, so the canonical name is kept either way.
+    display_name: Mapped[str] = mapped_column(String(160), default="")
+    #: Search synonyms ("OHP", "military press"). Improves the picker without
+    #: creating duplicate exercises that would split an exercise's history.
+    aliases: Mapped[list] = mapped_column(JSON, default=list)
+    family_slug: Mapped[str] = mapped_column(String(120), default="", index=True)
     primary_muscle: Mapped[str] = mapped_column(String(32), index=True)
     secondary_muscles: Mapped[list] = mapped_column(JSON, default=list)
     equipment: Mapped[str] = mapped_column(String(40), index=True)
-    movement_pattern: Mapped[str] = mapped_column(String(40), default="")
+    movement_pattern: Mapped[str] = mapped_column(String(40), default="", index=True)
     category: Mapped[str] = mapped_column(String(32), default="strength")
+    #: True for multi-joint work. Drives the indirect-volume weighting.
+    is_compound: Mapped[bool] = mapped_column(default=False)
     unilateral: Mapped[bool] = mapped_column(default=False)
+    laterality: Mapped[str] = mapped_column(String(24), default="bilateral")
+    load_type: Mapped[str] = mapped_column(String(24), default="external", index=True)
+    measurement: Mapped[str] = mapped_column(String(16), default="reps")
+    default_unit: Mapped[str] = mapped_column(String(8), default="kg")
+    #: Smallest load step available for this exercise — 2.5 kg on a barbell,
+    #: 5 kg on a stack, 2 kg between dumbbells. Progression proposes real
+    #: numbers with this, instead of a load the gym cannot make.
+    increment_kg: Mapped[float] = mapped_column(Float, default=2.5)
+    bar_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    instructions: Mapped[str] = mapped_column(Text, default="")
+    setup_notes: Mapped[str] = mapped_column(Text, default="")
+    rom_notes: Mapped[str] = mapped_column(Text, default="")
+    #: Per-exercise tracking switches (track_rpe, track_rir, track_tempo…).
+    tracking_config: Mapped[dict] = mapped_column(JSON, default=dict)
     default_sets: Mapped[int] = mapped_column(Integer, default=3)
     default_reps: Mapped[int] = mapped_column(Integer, default=8)
     notes: Mapped[str] = mapped_column(Text, default="")
     is_custom: Mapped[bool] = mapped_column(default=False)
     favorite: Mapped[bool] = mapped_column(default=False)
+    #: Archived, never deleted — an exercise dropped from the rotation still has
+    #: to explain the sets recorded against it.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class StrengthWorkoutTemplate(Base):
-    """A reusable workout template with ordered exercise targets."""
+    """A reusable workout template with ordered exercise targets.
+
+    Templates are mutable, and that is safe: a session copies its prescription
+    into ``StrengthWorkoutExercise.prescription`` when it starts, so editing a
+    template changes only what happens *next*. History-safety comes from the
+    snapshot, not from freezing the template — which is why ``name`` can stay
+    unique and human-readable instead of accumulating "(v3)" suffixes.
+
+    ``version`` is bumped on edit purely so a session can record which revision
+    it was started from.
+    """
 
     __tablename__ = "strength_workout_templates"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(160), unique=True, index=True)
     description: Mapped[str] = mapped_column(Text, default="")
+    #: Null for the seeded templates, which belong to no one in particular.
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    estimated_duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class StrengthTemplateExercise(Base):
+    """One prescribed exercise in a template.
+
+    Note the unique constraint on (template, exercise): an exercise appears at
+    most once per template. That rules out legitimate patterns like squatting
+    at the start and again as a back-off — recorded as a known limitation
+    rather than worked around, since the constraint predates this work and
+    programme days (which have no such limit) are the richer planning surface.
+    """
+
     __tablename__ = "strength_template_exercises"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -643,8 +707,19 @@ class StrengthTemplateExercise(Base):
     )
     exercise_id: Mapped[int] = mapped_column(ForeignKey("strength_exercises.id"), index=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    section: Mapped[str] = mapped_column(String(20), default="main")
+    superset_group: Mapped[str | None] = mapped_column(String(8), nullable=True)
     target_sets: Mapped[int] = mapped_column(Integer, default=3)
     target_reps: Mapped[int] = mapped_column(Integer, default=8)
+    rep_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rep_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_rpe: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_rir: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rest_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tempo: Mapped[str] = mapped_column(String(16), default="")
+    progression_rule: Mapped[str] = mapped_column(String(24), default="manual")
+    progression_config: Mapped[dict] = mapped_column(JSON, default=dict)
     notes: Mapped[str] = mapped_column(Text, default="")
 
     __table_args__ = (
@@ -653,7 +728,14 @@ class StrengthTemplateExercise(Base):
 
 
 class StrengthWorkout(Base):
-    """An active/completed strength workout."""
+    """A strength session that was actually started.
+
+    ``readiness_snapshot`` is copied in at start time rather than joined at
+    read time. Apple Health revises sleep and HRV for a day after the fact, so
+    a live join would quietly rewrite the readiness a session was performed
+    under — and any correlation drawn from it. The snapshot is what was true
+    when the operator walked into the gym.
+    """
 
     __tablename__ = "strength_workouts"
 
@@ -662,33 +744,104 @@ class StrengthWorkout(Base):
     template_id: Mapped[int | None] = mapped_column(
         ForeignKey("strength_workout_templates.id"), nullable=True
     )
+    planned_session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strength_planned_sessions.id"), nullable=True, index=True
+    )
+    programme_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strength_programmes.id"), nullable=True, index=True
+    )
+    programme_week: Mapped[int | None] = mapped_column(Integer, nullable=True)
     name: Mapped[str] = mapped_column(String(160), default="Strength Workout")
     started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
     default_rest_seconds: Mapped[int] = mapped_column(Integer, default=120)
+    location: Mapped[str] = mapped_column(String(120), default="")
+
+    # --- state at the time of training ------------------------------------ #
+    bodyweight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    readiness_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    energy_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mood_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    session_rpe: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pain_notes: Mapped[str] = mapped_column(Text, default="")
+    abandoned_reason: Mapped[str] = mapped_column(String(200), default="")
+
     notes: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(24), default="manual")
+    #: Set when this session came from an import, so foreign records stay
+    #: identifiable and a re-import cannot duplicate them.
+    import_id: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    #: Links to the Apple Health activity covering the same period, when one
+    #: exists — giving the session real HR and calorie data it cannot self-report.
+    workout_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workouts.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
+    __table_args__ = (
+        Index("ix_strength_workout_user_started", "user_id", "started_at"),
+    )
+
 
 class StrengthWorkoutExercise(Base):
-    """An exercise inside one workout, with ordered set entries."""
+    """An exercise inside one workout, with ordered set entries.
+
+    ``classification_snapshot`` freezes the exercise's muscle and movement
+    tagging as it stood that day. Reclassifying an exercise later (deciding
+    Romanian deadlifts are hinge-primary rather than hamstring-primary) would
+    otherwise silently restate years of muscle-group volume. Both readings stay
+    available: the snapshot for "what I believed then", the live join for
+    "under today's classification".
+    """
 
     __tablename__ = "strength_workout_exercises"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     workout_id: Mapped[int] = mapped_column(ForeignKey("strength_workouts.id"), index=True)
     exercise_id: Mapped[int] = mapped_column(ForeignKey("strength_exercises.id"), index=True)
+    programme_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strength_programme_items.id"), nullable=True
+    )
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    section: Mapped[str] = mapped_column(String(20), default="main")
+    superset_group: Mapped[str | None] = mapped_column(String(8), nullable=True)
     target_sets: Mapped[int] = mapped_column(Integer, default=3)
     target_reps: Mapped[int] = mapped_column(Integer, default=8)
+    #: The prescription this exercise was performed against, copied at start.
+    prescription: Mapped[dict] = mapped_column(JSON, default=dict)
+    classification_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    #: The operator swapped the prescribed movement. Kept with its reason —
+    #: "leg press machine taken" and "knee hurt" imply different follow-ups.
+    substituted_from_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strength_exercises.id"), nullable=True
+    )
+    substitution_reason: Mapped[str] = mapped_column(String(200), default="")
+    technique_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pain_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    equipment_variation: Mapped[str] = mapped_column(String(120), default="")
+    #: Seat height, pin position, handle — the settings that make a machine
+    #: load reproducible. Without them, machine numbers are not comparable.
+    machine_settings: Mapped[dict] = mapped_column(JSON, default=dict)
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class StrengthSetEntry(Base):
-    """One logged set in an active or completed strength workout."""
+    """One logged set — the atomic record the whole dataset is built from.
+
+    Everything here is a separate column rather than a JSON blob because these
+    are exactly the fields longitudinal queries filter and group on. "Show my
+    working sets between 3 and 6 reps at RPE 8+ over two years" has to be an
+    index scan, not a full-table JSON parse.
+
+    Corrections do not delete. ``voided_at`` retires a row from statistics
+    while keeping it readable, and ``edit_history`` keeps prior values. A
+    mistyped 200 kg bench would otherwise stand as a permanent PR, or vanish
+    without trace — both worse than an auditable correction.
+    """
 
     __tablename__ = "strength_set_entries"
 
@@ -697,12 +850,56 @@ class StrengthSetEntry(Base):
         ForeignKey("strength_workout_exercises.id"), index=True
     )
     set_number: Mapped[int] = mapped_column(Integer, default=1)
+    set_type: Mapped[str] = mapped_column(String(16), default="working", index=True)
+
+    # --- load and work ---------------------------------------------------- #
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    distance_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: Share of bodyweight the movement actually loads (~0.65 for a push-up).
+    #: Configurable and transparent — it is an estimate, not a measurement.
+    bodyweight_factor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: Band or machine assistance. Subtracts from effective load, so an
+    #: assisted pull-up getting *easier* shows as progress, not regression.
+    assistance_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: Bodyweight at the time, copied from health data. Re-reading it later
+    #: would silently restate every historical bodyweight-exercise volume.
+    bodyweight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: Unilateral work done separately per side. Null for bilateral sets.
+    left_reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    right_reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    left_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    right_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # --- effort and execution --------------------------------------------- #
     rpe: Mapped[float | None] = mapped_column(Float, nullable=True)
-    set_type: Mapped[str] = mapped_column(String(16), default="working")
+    rir: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tempo: Mapped[str] = mapped_column(String(16), default="")
+    rest_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    to_failure: Mapped[bool] = mapped_column(default=False)
+    has_partials: Mapped[bool] = mapped_column(default=False)
+    rom_quality: Mapped[str] = mapped_column(String(16), default="")  # full|partial|assisted
+    #: For drop sets and rest-pause: the set this one hangs off. Keeps a drop
+    #: from being counted as an independent working set.
+    parent_set_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strength_set_entries.id"), nullable=True
+    )
+    superset_group: Mapped[str | None] = mapped_column(String(8), nullable=True)
+
     completed: Mapped[bool] = mapped_column(default=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+    # --- provenance and correction ---------------------------------------- #
+    source: Mapped[str] = mapped_column(String(24), default="manual")
+    #: Client-supplied key making set creation idempotent, so a retry over a
+    #: flaky gym connection cannot silently duplicate a set.
+    client_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    void_reason: Mapped[str] = mapped_column(String(200), default="")
+    #: Append-only list of prior values, newest last.
+    edit_history: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
@@ -710,11 +907,23 @@ class StrengthSetEntry(Base):
         UniqueConstraint(
             "workout_exercise_id", "set_number", name="uq_strength_set_exercise_number"
         ),
+        UniqueConstraint("client_key", name="uq_strength_set_client_key"),
+        Index("ix_strength_set_type_completed", "set_type", "completed"),
     )
 
 
 class StrengthPersonalRecord(Base):
-    """Personal record achieved by a completed set."""
+    """A personal record, traceable to the exact set that set it.
+
+    ``previous_value`` is stored alongside rather than looked up, so a record
+    can always state what it beat even after the record it beat is superseded
+    or its set is voided.
+
+    ``is_active`` is false once beaten — records are kept, not overwritten, so
+    the progression of a lift is itself a readable series. ``invalidated_at``
+    is different and deliberate: it marks a record disowned because the set
+    behind it was a typo, and those must never reappear as "beaten".
+    """
 
     __tablename__ = "strength_personal_records"
 
@@ -725,9 +934,29 @@ class StrengthPersonalRecord(Base):
     set_entry_id: Mapped[int | None] = mapped_column(
         ForeignKey("strength_set_entries.id"), nullable=True
     )
-    record_type: Mapped[str] = mapped_column(String(24), default="top_set")
+    programme_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strength_programmes.id"), nullable=True
+    )
+    record_type: Mapped[str] = mapped_column(String(24), default="heaviest_weight", index=True)
     value: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(8), default="kg")
+    #: For ``most_reps_at_weight`` / ``best_at_rep_target``: the weight or rep
+    #: count the record is *at*. A 5-rep best is meaningless without the 5.
+    qualifier: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: e.g. "epley" — a 1RM record has to say which formula produced it, or it
+    #: cannot be compared with one computed under a different default.
+    calculation_method: Mapped[str] = mapped_column(String(24), default="measured")
+    previous_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    previous_record_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strength_personal_records.id"), nullable=True
+    )
+    is_active: Mapped[bool] = mapped_column(default=True, index=True)
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     achieved_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_strength_pr_lookup", "user_id", "exercise_id", "record_type", "is_active"),
+    )
 
 
 class FitnessRoute(Base):
@@ -1399,3 +1628,262 @@ class Goal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     extra: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+# --------------------------------------------------------------------------- #
+# Strength training — programmes, planning and progression
+# --------------------------------------------------------------------------- #
+# The tables above (``strength_exercises`` … ``strength_personal_records``) were
+# built for one job: log a session quickly on a phone. What follows adds the
+# layer that turns those logs into a *dataset* — what was prescribed, what was
+# actually done, and why the prescription changed.
+#
+# Three rules run through all of it, because each one is a mistake that is
+# cheap to avoid now and impossible to repair later:
+#
+# 1. **Plans are copied into sessions, not referenced by them.** A completed
+#    session stores the prescription it was performed against. Editing a
+#    template next month must not rewrite what last month's session was asked
+#    to do — otherwise adherence becomes unanswerable.
+# 2. **Nothing performed is ever deleted.** Corrections set ``voided_at`` and
+#    keep the original value. A set that never existed and a set that was
+#    entered wrong are different facts, and only one of them should vanish
+#    from a chart.
+# 3. **Everything is stored in kilograms.** Display units are a preference.
+#    Storing whatever the user was typing that month makes every longitudinal
+#    query a unit-archaeology exercise.
+
+# Vocabularies. Kept as strings rather than SQL enums: SQLite cannot alter an
+# enum in place, and these lists grow (the brief already anticipates new set
+# types and measurement kinds).
+MOVEMENT_PATTERNS = (
+    "horizontal_push", "vertical_push", "horizontal_pull", "vertical_pull",
+    "squat", "hinge", "lunge", "carry", "elbow_flexion", "elbow_extension",
+    "knee_flexion", "knee_extension", "calf", "core_flexion", "core_extension",
+    "anti_extension", "anti_rotation", "rotation", "other",
+)
+#: How load is applied. Drives volume maths — an assisted pull-up and a
+#: weighted pull-up move the load in opposite directions.
+LOAD_TYPES = ("external", "bodyweight", "weighted_bodyweight", "assisted")
+#: What a set actually measures. A plank is not badly-recorded reps.
+MEASUREMENT_KINDS = ("reps", "duration", "distance")
+LATERALITIES = ("bilateral", "unilateral_alternating", "unilateral_separate")
+SET_TYPES = (
+    "warmup", "working", "top_set", "backoff", "amrap", "drop",
+    "rest_pause", "myo_rep", "technique", "test", "failure",
+)
+#: Only these count toward working-set and hard-set statistics. Warm-ups and
+#: technique work are real training but must not inflate volume.
+WORKING_SET_TYPES = (
+    "working", "top_set", "backoff", "amrap", "drop",
+    "rest_pause", "myo_rep", "failure", "test",
+)
+SESSION_STATUSES = (
+    "planned", "active", "completed", "partial", "abandoned", "skipped", "rescheduled",
+)
+PROGRESSION_RULES = (
+    "fixed_load", "double_progression", "rep_range", "percentage",
+    "rpe_target", "rir_target", "top_set_backoff", "amrap_triggered",
+    "manual", "deload",
+)
+PR_TYPES = (
+    "heaviest_weight", "most_reps_at_weight", "best_e1rm", "best_set_volume",
+    "best_session_volume", "best_at_rep_target", "longest_duration", "fastest_time",
+)
+
+
+class StrengthProgramme(Base):
+    """A multi-week training plan.
+
+    Versioned rather than mutated: ``version`` increments and ``supersedes_id``
+    points back, so a session completed under v1 keeps pointing at v1's
+    prescriptions even after v2 exists. Without this, "did I follow the
+    programme?" silently becomes "does today's programme resemble what I did?".
+    """
+
+    __tablename__ = "strength_programmes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(160), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    goal: Mapped[str] = mapped_column(String(60), default="")  # strength|hypertrophy|…
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    weeks: Mapped[int] = mapped_column(Integer, default=4)
+    days_per_week: Mapped[int] = mapped_column(Integer, default=3)
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    supersedes_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strength_programmes.id"), nullable=True
+    )
+    notes: Mapped[str] = mapped_column(Text, default="")
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    extra: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    blocks: Mapped[list[StrengthProgrammeBlock]] = relationship(
+        back_populates="programme", cascade="all, delete-orphan"
+    )
+    days: Mapped[list[StrengthProgrammeDay]] = relationship(
+        back_populates="programme", cascade="all, delete-orphan"
+    )
+
+
+class StrengthProgrammeBlock(Base):
+    """A phase within a programme (accumulation, intensification, deload)."""
+
+    __tablename__ = "strength_programme_blocks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    programme_id: Mapped[int] = mapped_column(
+        ForeignKey("strength_programmes.id"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), default="")
+    focus: Mapped[str] = mapped_column(String(60), default="")
+    start_week: Mapped[int] = mapped_column(Integer, default=1)
+    end_week: Mapped[int] = mapped_column(Integer, default=1)
+    is_deload: Mapped[bool] = mapped_column(default=False)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    programme: Mapped[StrengthProgramme] = relationship(back_populates="blocks")
+
+
+class StrengthProgrammeDay(Base):
+    """One training day in the programme grid (week N, day M)."""
+
+    __tablename__ = "strength_programme_days"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    programme_id: Mapped[int] = mapped_column(
+        ForeignKey("strength_programmes.id"), index=True
+    )
+    week_number: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    day_number: Mapped[int] = mapped_column(Integer, default=1)
+    name: Mapped[str] = mapped_column(String(120), default="")
+    focus: Mapped[str] = mapped_column(String(60), default="")
+    # 0=Mon … 6=Sun. Null means "any day this week" — flexible scheduling is a
+    # real choice, not missing data, so it is not defaulted to Monday.
+    weekday: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+    programme: Mapped[StrengthProgramme] = relationship(back_populates="days")
+    items: Mapped[list[StrengthProgrammeItem]] = relationship(
+        back_populates="day", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "programme_id", "week_number", "day_number", name="uq_programme_day"
+        ),
+    )
+
+
+class StrengthProgrammeItem(Base):
+    """One prescribed exercise on a programme day.
+
+    The prescription is deliberately expressive — a rep *range* with an RPE cap
+    is a different instruction from a fixed rep count, and flattening the two
+    would make progression rules unable to tell whether a target was met.
+    """
+
+    __tablename__ = "strength_programme_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    day_id: Mapped[int] = mapped_column(ForeignKey("strength_programme_days.id"), index=True)
+    exercise_id: Mapped[int] = mapped_column(ForeignKey("strength_exercises.id"), index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    section: Mapped[str] = mapped_column(String(20), default="main")  # warmup|main|accessory
+    # Exercises sharing a superset group are alternated. Null = performed straight.
+    superset_group: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    target_sets: Mapped[int] = mapped_column(Integer, default=3)
+    rep_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rep_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    percent_1rm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_rpe: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_rir: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tempo: Mapped[str] = mapped_column(String(16), default="")
+    rest_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    warmup_note: Mapped[str] = mapped_column(Text, default="")
+    progression_rule: Mapped[str] = mapped_column(String(24), default="manual")
+    progression_config: Mapped[dict] = mapped_column(JSON, default=dict)
+    #: Exercise IDs acceptable when equipment is busy or unavailable.
+    substitution_ids: Mapped[list] = mapped_column(JSON, default=list)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+    day: Mapped[StrengthProgrammeDay] = relationship(back_populates="items")
+
+
+class StrengthPlannedSession(Base):
+    """A scheduled workout — the intention, distinct from what happened.
+
+    Kept separate from ``StrengthWorkout`` rather than folded into it with a
+    status flag. A plan that was never started and a session that was started
+    and abandoned are different events, and collapsing them would quietly
+    inflate adherence.
+    """
+
+    __tablename__ = "strength_planned_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    planned_date: Mapped[date] = mapped_column(Date, index=True)
+    programme_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strength_programmes.id"), nullable=True, index=True
+    )
+    programme_day_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strength_programme_days.id"), nullable=True
+    )
+    template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strength_workout_templates.id"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(String(160), default="")
+    status: Mapped[str] = mapped_column(String(16), default="planned", index=True)
+    #: Frozen copy of the prescription, so template edits cannot rewrite history.
+    prescription: Mapped[list] = mapped_column(JSON, default=list)
+    target_duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rescheduled_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    reschedule_reason: Mapped[str] = mapped_column(Text, default="")
+    #: Set only when the operator accepted a readiness-based suggestion. An
+    #: adjustment ORION proposed and the user declined is not recorded here.
+    readiness_adjustment: Mapped[dict] = mapped_column(JSON, default=dict)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class StrengthProgressionEvent(Base):
+    """A progression proposal and what the operator decided about it.
+
+    Stored whether accepted or rejected. Rejections are the more interesting
+    half of the record: a rule the operator overrides every week is a rule that
+    does not fit them, and that is only visible if the misses are kept.
+    """
+
+    __tablename__ = "strength_progression_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    exercise_id: Mapped[int] = mapped_column(ForeignKey("strength_exercises.id"), index=True)
+    workout_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strength_workouts.id"), nullable=True, index=True
+    )
+    programme_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strength_programme_items.id"), nullable=True
+    )
+    rule: Mapped[str] = mapped_column(String(24), default="manual")
+    #: Everything the rule looked at, so the proposal can be re-derived later.
+    inputs: Mapped[dict] = mapped_column(JSON, default=dict)
+    proposal: Mapped[dict] = mapped_column(JSON, default=dict)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    decision: Mapped[str] = mapped_column(String(12), default="pending", index=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    #: What was actually prescribed next time — which may match neither the
+    #: proposal nor the previous session, if the operator typed their own.
+    applied_prescription: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
