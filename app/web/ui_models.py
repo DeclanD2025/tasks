@@ -395,10 +395,22 @@ def _task_demands(uid: int) -> dict:
     due_today = [t for t in tasks if t["due_date"] == today_date]
     undated = [t for t in tasks if not t["due_date"]]
 
-    # Most overdue first — the ones that have been owed longest lead.
-    pressing = sorted(overdue, key=lambda t: t["due_date"]) + sorted(
-        due_today, key=lambda t: (t["priority"] != "high", t["title"])
-    )
+    # What to name, given only four slots. Not "most overdue first": the
+    # longest-overdue items here are daily recurrences (journal, Duolingo)
+    # that are chronically late and read as noise, and a task that fell due
+    # yesterday is far more actionable than one stale for three weeks.
+    # So: due today first, then high priority, then most recently due.
+    _PRIORITY = {"high": 0, "medium": 1, "low": 2}
+
+    def rank(task: dict) -> tuple:
+        return (
+            task["due_date"] != today_date,          # today's leads
+            bool(task.get("recurrence")),            # recurrences trail
+            _PRIORITY.get(task["priority"], 1),
+            -(task["due_date"].toordinal() if task["due_date"] else 0),
+        )
+
+    pressing = sorted(overdue + due_today, key=rank)
 
     return {
         "open": len(tasks),

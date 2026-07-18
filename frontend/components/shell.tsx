@@ -3,7 +3,7 @@
 import { PanelLeftClose, PanelLeft, RefreshCw, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
 import { useApi } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { MOBILE_NAV, MORE_ITEMS, SIDEBAR_GROUPS } from "@/lib/nav";
@@ -88,29 +88,35 @@ function Sidebar() {
 }
 
 /* ============================================================ TopBar */
-/** Today's date, rendered client-side.
+/** Today's date, read from the device clock.
  *
  * This is a static export, so anything computed at build time freezes on the
- * build date. The date has to come from the device.
+ * build date — the date has to come from the client. The clock is an external
+ * mutable source, which is what useSyncExternalStore is for: the null server
+ * snapshot means the prerendered HTML carries no date, so there is nothing for
+ * the client to mismatch on hydration.
  */
-function useToday() {
-  const [today, setToday] = useState<string | null>(null);
-  useEffect(() => {
-    const format = () =>
-      setToday(
-        new Date().toLocaleDateString("en-GB", {
-          weekday: "short",
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        }),
-      );
-    format();
-    // A tab left open overnight must not keep yesterday's date on screen.
-    const timer = setInterval(format, 60_000);
+const clock = {
+  // A tab left open overnight must not keep yesterday's date on screen.
+  subscribe(onChange: () => void) {
+    const timer = setInterval(onChange, 60_000);
     return () => clearInterval(timer);
-  }, []);
-  return today;
+  },
+  // Date-granular, so this is a stable value within a day and React's
+  // Object.is comparison does not see a change on every tick.
+  now: () => new Date().toDateString(),
+  onServer: () => null,
+};
+
+function useToday(): string | null {
+  const stamp = useSyncExternalStore(clock.subscribe, clock.now, clock.onServer);
+  if (!stamp) return null;
+  return new Date(stamp).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 /** The freshness chip: how many sources are current, from the real source list. */

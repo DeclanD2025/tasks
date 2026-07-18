@@ -4,11 +4,13 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { RecommendationCard } from "@/components/interactive";
 import { Loaded } from "@/components/loading";
-import { ChangeList, EmptyState, StatusStrip, TimelineList } from "@/components/patterns";
+import { ChangeList, EmptyState, TimelineList } from "@/components/patterns";
 import { Card, DomainDot, Meta, SectionHeader } from "@/components/ui";
 import { useApi } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import { domainStyle } from "@/lib/domains";
 import type { TodayPayload } from "@/lib/payloads";
+import type { StatusMetric } from "@/lib/types";
 
 const syncTone = {
   ok: "text-good",
@@ -26,6 +28,15 @@ function daypart(hour: number): string {
   return "night";
 }
 
+/** What the commitments block is called depends on how much day is left.
+ *  In the morning it frames the day ahead; by evening it is what is still
+ *  outstanding, which is a different question. */
+function demandsHeading(part: string): { title: string; sub: string } {
+  if (part === "morning") return { title: "On you today", sub: "What the day is asking for" };
+  if (part === "afternoon") return { title: "Still on you", sub: "What is left of the day" };
+  return { title: "Left undone", sub: "What did not get closed today" };
+}
+
 export default function TodayPage() {
   // One request: the backend bundles the next run and the sync list into
   // /today because rebuilding those read models separately is expensive.
@@ -34,7 +45,6 @@ export default function TodayPage() {
 }
 
 function Today({ data }: { data: TodayPayload }) {
-  const syncSources = data.syncSources;
   const now = new Date();
   const part = daypart(now.getHours());
   const dateLine = now.toLocaleDateString("en-GB", {
@@ -42,31 +52,30 @@ function Today({ data }: { data: TodayPayload }) {
     day: "numeric",
     month: "long",
   });
-  const nextRun = data.nextRun;
+  const { nextRun, lede, tasks } = data;
+  const heading = demandsHeading(part);
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-4 py-5 lg:px-6 lg:py-6">
-      <header className="mb-4">
-        <p className="text-[13px] font-medium text-muted">
+      {/* ---------------------------------------------------------- Lede.
+          The page's one bold move: today's read, stated rather than
+          assembled by the reader from four numbers. Everything below it is
+          deliberately quieter. */}
+      <header className="mb-6 max-w-[62ch]">
+        <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-faint">
           {dateLine} · {part}
-          {/* freshness arrives as a full phrase, e.g. "Last source refresh 1d ago" */}
-          {data.freshness && <span className="text-faint"> · {data.freshness.toLowerCase()}</span>}
+          {data.freshness && <> · {data.freshness.toLowerCase()}</>}
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight text-text lg:text-[28px]">
-          Good {part === "night" ? "evening" : part}
-          {data.user.name ? `, ${data.user.name}` : ""}
-        </h1>
+        <p className="mt-2.5 text-balance text-[21px] font-semibold leading-[1.35] tracking-tight text-text lg:text-[26px]">
+          {lede.state || `Good ${part === "night" ? "evening" : part}${data.user.name ? `, ${data.user.name}` : ""}.`}
+          {lede.demand && <span className="text-muted"> {lede.demand}</span>}
+        </p>
+        {lede.nudge && (
+          <p className="mt-1.5 text-[13.5px] text-muted">{lede.nudge}</p>
+        )}
       </header>
 
-      {/* Summary band */}
-      {data.statusStrip.length > 0 && (
-        <div className="mb-5">
-          <StatusStrip items={data.statusStrip} />
-        </div>
-      )}
-
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_var(--rail-w)] xl:items-start">
-        {/* Central workspace */}
         <div className="min-w-0 space-y-5">
           {data.recommendation ? (
             <RecommendationCard rec={data.recommendation} />
@@ -78,6 +87,43 @@ function Today({ data }: { data: TodayPayload }) {
                 cta="Import data"
                 href="/data"
               />
+            </Card>
+          )}
+
+          {/* Demoted from four hero tiles to one compact band: the numbers are
+              context for the lede, not the headline. */}
+          {data.statusStrip.length > 0 && <MetricBand items={data.statusStrip} />}
+
+          {/* What is actually owed. The backlog count was the single largest
+              fact about the day and appeared nowhere on this page. */}
+          {(tasks.overdue > 0 || tasks.dueToday > 0) && (
+            <Card className="p-4 sm:p-5">
+              <SectionHeader
+                title={heading.title}
+                sub={heading.sub}
+                action={
+                  <Link href="/tasks" className="text-[12px] font-medium text-muted hover:text-text">
+                    All tasks →
+                  </Link>
+                }
+              />
+              <div className="mb-3 flex flex-wrap items-baseline gap-x-5 gap-y-1">
+                {tasks.dueToday > 0 && (
+                  <Count value={tasks.dueToday} label="due today" tone="text-text" />
+                )}
+                {tasks.overdue > 0 && (
+                  <Count value={tasks.overdue} label="past due" tone="text-warn" />
+                )}
+                <Count value={tasks.open} label="open" tone="text-faint" />
+              </div>
+              <ul className="space-y-1.5 border-t border-border pt-3">
+                {tasks.soonest.map((t) => (
+                  <li key={t.id} className="flex items-baseline justify-between gap-3 text-[13.5px]">
+                    <span className="min-w-0 truncate text-text">{t.title}</span>
+                    <Meta className={cn("shrink-0", t.overdue && "text-warn")}>{t.dueLabel}</Meta>
+                  </li>
+                ))}
+              </ul>
             </Card>
           )}
 
@@ -94,7 +140,6 @@ function Today({ data }: { data: TodayPayload }) {
             )}
           </Card>
 
-          {/* Next action */}
           {nextRun && (
             <Card className="p-4 sm:p-5">
               <div className="flex items-start justify-between gap-4" style={domainStyle("running")}>
@@ -145,9 +190,9 @@ function Today({ data }: { data: TodayPayload }) {
 
           <Card className="p-4">
             <SectionHeader title="Data sync" action={<Link href="/data" className="text-[12px] font-medium text-muted hover:text-text">Manage</Link>} />
-            {syncSources.length ? (
+            {data.syncSources.length ? (
               <ul className="space-y-1.5">
-                {syncSources.map((s) => (
+                {data.syncSources.map((s) => (
                   <li key={s.name} className="flex items-center justify-between gap-2 text-[12.5px]">
                     <span className="flex min-w-0 items-center gap-1.5 text-muted">
                       <span aria-hidden className={`size-1.5 shrink-0 rounded-full bg-current ${syncTone[s.status]}`} />
@@ -164,5 +209,59 @@ function Today({ data }: { data: TodayPayload }) {
         </aside>
       </div>
     </div>
+  );
+}
+
+/* ----------------------------------------------------------------- Count */
+function Count({ value, label, tone }: { value: number; label: string; tone: string }) {
+  return (
+    <span className="flex items-baseline gap-1.5">
+      <span className={cn("tnum text-xl font-semibold", tone)}>{value}</span>
+      <span className="text-[12.5px] text-muted">{label}</span>
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------ MetricBand */
+/** The four metrics as one quiet band rather than four competing tiles.
+ *
+ *  A stale reading is shown with its age and muted instead of being presented
+ *  as current state — mood stopped arriving weeks ago and was still sitting in
+ *  the hero row as if it were today's check-in.
+ */
+function MetricBand({ items }: { items: StatusMetric[] }) {
+  return (
+    <Card className="divide-y divide-border p-0 sm:grid sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4">
+      {items.map((m, i) => (
+        <Link
+          key={m.kind}
+          href={`/insights/metric/${m.kind}`}
+          style={domainStyle(m.domain)}
+          className={cn(
+            "group flex items-center justify-between gap-3 p-3.5 transition-colors hover:bg-surface-2 sm:block",
+            i > 0 && "sm:border-l sm:border-border",
+          )}
+        >
+          <span className="flex items-center gap-1.5">
+            <DomainDot domain={m.domain} />
+            <span className="text-[12px] font-medium text-muted">{m.label}</span>
+          </span>
+          <span className="flex items-baseline gap-1 sm:mt-1.5">
+            <span
+              className={cn(
+                "tnum text-[19px] font-semibold",
+                m.stale ? "text-faint" : "text-text",
+              )}
+            >
+              {m.value}
+            </span>
+            {m.unit && <span className="text-[12px] text-faint">{m.unit}</span>}
+          </span>
+          <Meta className="hidden sm:mt-0.5 sm:block">
+            {m.stale ? `last read ${m.ageLabel}` : m.deltaText}
+          </Meta>
+        </Link>
+      ))}
+    </Card>
   );
 }

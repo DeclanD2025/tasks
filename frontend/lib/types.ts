@@ -48,6 +48,36 @@ export type StatusMetric = {
   trend: Trend;
   deltaText: string;
   tone: "good" | "watch" | "flat";
+  /** Age of the underlying reading. `latest` is the last *recorded* value, not
+   *  necessarily a recent one, so a metric that stopped arriving weeks ago must
+   *  say so rather than pose as today's state. */
+  ageDays: number | null;
+  ageLabel: string;
+  stale: boolean;
+};
+
+export type TaskDemands = {
+  open: number;
+  overdue: number;
+  dueToday: number;
+  undated: number;
+  soonest: {
+    id: number;
+    title: string;
+    area: string;
+    priority: string;
+    dueLabel: string;
+    overdue: boolean;
+  }[];
+};
+
+/** The one-line read on today. Assembled from facts the strip and task summary
+ *  already established — it introduces no opinion of its own, so it cannot
+ *  contradict the recommendation beneath it. */
+export type Lede = {
+  state: string;
+  demand: string;
+  nudge: string;
 };
 
 export type Recommendation = {

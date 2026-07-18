@@ -10,11 +10,13 @@ import type {
   Goal,
   Habit,
   Insight,
+  Lede,
   MetricDetail,
   PersonalRecord,
   Recommendation,
   StatusMetric,
   SyncSource,
+  TaskDemands,
   TimelineEntry,
 } from "./types";
 
@@ -29,6 +31,8 @@ export type TodayPayload = {
   freshness: string;
   sleepDebtLabel: string;
   statusStrip: StatusMetric[];
+  lede: Lede;
+  tasks: TaskDemands;
   recommendation: Recommendation | null;
   /** Served here so Today is one request, not three — the read models behind
    *  training and sources are expensive to rebuild. */

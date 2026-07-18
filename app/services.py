@@ -420,6 +420,7 @@ def get_tasks(user_id: int, *, include_done: bool = True) -> list[dict]:
                 "status": r.status,
                 "notes": r.notes,
                 "due_date": r.due_date,
+                "recurrence": r.recurrence,
                 "completed_at": r.completed_at,
                 "dirty": bool(r.dirty),
             }
