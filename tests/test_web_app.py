@@ -15,7 +15,9 @@ from app.db.models import ClientMutation, Task, WorkoutSessionLog
 from app.services import get_default_user_id
 from app.web.server import create_app
 
-PAGES = ["/", "/training", "/run", "/recovery", "/tasks", "/money", "/mind", "/stoic", "/data"]
+# "/" now belongs to the redesigned UI when it is built; the Jinja today page
+# lives at /today (see app/web/server.py).
+PAGES = ["/today", "/training", "/run", "/recovery", "/tasks", "/money", "/mind", "/stoic", "/data"]
 
 
 @pytest.fixture()

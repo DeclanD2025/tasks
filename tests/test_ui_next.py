@@ -54,6 +54,30 @@ def test_ui_serves_index_when_authed(authed: TestClient):
 
 
 @built
+def test_root_lands_on_the_redesigned_ui(authed: TestClient):
+    """Visiting the bare domain shows the new UI, not the Jinja today page."""
+    response = authed.get("/", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == f"{ui_next.ui_base_path()}/"
+
+
+@built
+def test_jinja_today_survives_at_its_own_path(authed: TestClient):
+    """Handing "/" over must not strip access to the real-data pages."""
+    response = authed.get("/today")
+    assert response.status_code == 200
+    assert "ORION" in response.text
+
+
+@built
+def test_root_redirect_still_requires_a_session(client: TestClient):
+    """The redirect must not become an unauthenticated hole at the root."""
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+@built
 def test_csp_allows_inline_scripts_only_under_the_ui_base_path(authed: TestClient):
     """A static export inlines its hydration payload and cannot use a nonce.
 

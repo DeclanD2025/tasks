@@ -171,6 +171,15 @@ def create_app() -> FastAPI:
     def healthz():
         return {"status": "ok"}
 
+    # When the redesigned UI is present it owns the site root, so visiting the
+    # bare domain lands on it. Registered before the routers because FastAPI
+    # resolves routes in registration order — the Jinja "/" would win
+    # otherwise. That page is still served at /today.
+    if _ui_base:
+        @app.get("/", include_in_schema=False)
+        def _root_to_ui():
+            return RedirectResponse(f"{_ui_base}/", status_code=307)
+
     for router in ALL_ROUTERS:
         app.include_router(router)
 

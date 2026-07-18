@@ -68,7 +68,10 @@ def _calendar_summary(uid: int) -> dict:
     }
 
 
+# Also served at /today: when the redesigned UI is built it takes over "/",
+# and this stays the way back to the real-data Jinja pages.
 @router.get("/", response_class=HTMLResponse)
+@router.get("/today", response_class=HTMLResponse)
 def today(request: Request):
     uid = user_id()
     now = datetime.now()
