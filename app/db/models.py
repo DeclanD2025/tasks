@@ -1298,3 +1298,98 @@ class ExternalSignalCache(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     __table_args__ = (UniqueConstraint("kind", "key", name="uq_signal_kind_key"),)
+
+
+# --------------------------------------------------------------------------- #
+# Plan: habits and goals
+# --------------------------------------------------------------------------- #
+# These are the operator's own intentions, so they are the one part of the
+# schema with no upstream connector — every row is entered by hand. Read/write
+# through ``app.domains.plan_service``; streaks and goal progress are computed
+# there, never stored, so they cannot drift from the entries that justify them.
+class Habit(Base):
+    """A recurring behaviour the operator intends to keep up.
+
+    ``cadence`` + ``target_per_period`` express the commitment ("3 times per
+    week"), which is what a streak is judged against. ``domain`` matches the
+    UI's semantic domain keys (see ``frontend/lib/domains.ts``) so the habit
+    inherits the same colour as everything else in its domain.
+    """
+
+    __tablename__ = "habits"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(160), default="")
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    domain: Mapped[str] = mapped_column(String(24), default="neutral")
+    cadence: Mapped[str] = mapped_column(String(16), default="daily")  # daily|weekly
+    target_per_period: Mapped[int] = mapped_column(Integer, default=1)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    # Archived rather than deleted: a habit you gave up on is still the
+    # explanation for a broken streak, so its entries must survive.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    extra: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    entries: Mapped[list["HabitEntry"]] = relationship(
+        back_populates="habit", cascade="all, delete-orphan"
+    )
+
+
+class HabitEntry(Base):
+    """One day's record for a habit.
+
+    A row exists only for days the habit was actually done — absence means not
+    done, so there is no "false" state to keep in sync. ``count`` covers habits
+    done more than once in a day; the unique constraint keeps one row per day.
+    """
+
+    __tablename__ = "habit_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    habit_id: Mapped[int] = mapped_column(ForeignKey("habits.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    count: Mapped[int] = mapped_column(Integer, default=1)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    habit: Mapped[Habit] = relationship(back_populates="entries")
+
+    __table_args__ = (UniqueConstraint("habit_id", "day", name="uq_habit_entry_day"),)
+
+
+class Goal(Base):
+    """A target the operator is working toward.
+
+    Progress comes from one of two places, and the distinction is surfaced in
+    the UI rather than blurred: if ``metric_kind`` is set, current value is
+    computed from real measured data and ``manual_value`` is ignored; otherwise
+    the operator maintains ``manual_value`` by hand. ``direction`` says which
+    way is progress, so a falling weight goal is not read as a regression.
+    """
+
+    __tablename__ = "goals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    domain: Mapped[str] = mapped_column(String(24), default="neutral")
+    # When set, names a metric ORION already measures (e.g. "run_distance"),
+    # and progress is derived from it instead of typed in.
+    metric_kind: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    metric_window_days: Mapped[int] = mapped_column(Integer, default=7)
+    baseline_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    manual_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit: Mapped[str] = mapped_column(String(24), default="")
+    direction: Mapped[str] = mapped_column(String(12), default="increase")  # increase|decrease
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active|achieved|abandoned
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    extra: Mapped[dict] = mapped_column(JSON, default=dict)

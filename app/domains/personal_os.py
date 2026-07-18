@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from math import isnan
 from statistics import mean
@@ -154,6 +154,13 @@ class RunSessionSuggestion:
     detail: str
     distance_km: float
     intensity: str
+    # The real day this session is planned for. ``day_source`` records how that
+    # day was arrived at, because the two are not equally strong claims:
+    # "observed" means the athlete genuinely tends to run that weekday,
+    # "spread" means there was not enough history to tell and the planner fell
+    # back to an evenly-spaced default. The UI must not present them alike.
+    day: date | None = None
+    day_source: str = "spread"
 
 
 @dataclass(frozen=True)
@@ -836,7 +843,10 @@ def get_run_plan_snapshot(user_id: int, recovery: RecoverySnapshot | None = None
         round(target, 1),
         "low" if next_type in {"Easy run", "Recovery run", "Walk-run"} else "moderate",
     )
-    weekly_plan = _weekly_run_plan(next_run, weekly_target, score)
+    ran_today = any(w.started_at.date() == today for w in workouts)
+    weekly_plan = _weekly_run_plan(next_run, weekly_target, score, workouts, today, ran_today)
+    # The scheduled copy carries the real day; the unscheduled one never escapes.
+    next_run = weekly_plan[0]
     adherence = "on track" if week_distance >= weekly_target * 0.65 else "behind plan" if week_distance else "not started"
     guardrail = "No jump above roughly 10-15% of recent weekly distance; recovery downgrades intensity."
     return RunPlanSnapshot(
@@ -854,16 +864,145 @@ def get_run_plan_snapshot(user_id: int, recovery: RecoverySnapshot | None = None
     )
 
 
-def _weekly_run_plan(next_run: RunSessionSuggestion, weekly_target: float, score: float | None) -> list[RunSessionSuggestion]:
+_MIN_RUNS_TO_INFER_DAYS = 6
+_DEFAULT_SPREAD = (1, 3, 5)  # Tue / Thu / Sat — even spacing when history is thin
+_RUN_DAY_LOOKBACK = 56       # eight weeks: recent enough to reflect current habits
+
+
+def _run_day_history(workouts: list, today: date) -> tuple[Counter, dict[int, float]]:
+    """How often, and how far, the athlete runs on each weekday.
+
+    Returns ``(counts, mean_distance_by_weekday)`` over the recent lookback
+    window. Weekday indices are Python's: Monday is 0.
+    """
+    cutoff = today - timedelta(days=_RUN_DAY_LOOKBACK)
+    counts: Counter = Counter()
+    distances: dict[int, list[float]] = {}
+    for workout in workouts:
+        day = workout.started_at.date()
+        if day < cutoff:
+            continue
+        weekday = day.weekday()
+        counts[weekday] += 1
+        if workout.distance_meters:
+            distances.setdefault(weekday, []).append(float(workout.distance_meters) / 1000.0)
+    averages = {wd: mean(vals) for wd, vals in distances.items() if vals}
+    return counts, averages
+
+
+def _planned_weekdays(counts: Counter, needed: int = 3) -> tuple[list[int], str]:
+    """Pick the weekdays to plan on, and say where that choice came from.
+
+    With enough history the athlete's own most-frequent running days win — the
+    plan then fits the week they actually keep. Below that threshold there is
+    nothing to infer from, so we fall back to an even spread and label it as
+    such rather than dressing a default up as a finding.
+    """
+    if sum(counts.values()) < _MIN_RUNS_TO_INFER_DAYS:
+        return list(_DEFAULT_SPREAD[:needed]), "spread"
+
+    # Most-run days first; ties break toward the earlier weekday so the choice
+    # is deterministic rather than dependent on Counter ordering.
+    ranked = sorted(counts, key=lambda wd: (-counts[wd], wd))
+    chosen = ranked[:needed]
+    if len(chosen) < needed:
+        # Pad from the default spread, skipping days already taken.
+        for weekday in _DEFAULT_SPREAD:
+            if len(chosen) == needed:
+                break
+            if weekday not in chosen:
+                chosen.append(weekday)
+    return sorted(chosen), "observed"
+
+
+def _next_date_for(weekday: int, anchor: date) -> date:
+    """The first date on or after ``anchor`` that falls on ``weekday``."""
+    return anchor + timedelta(days=(weekday - anchor.weekday()) % 7)
+
+
+def _schedule_run_days(workouts: list, today: date, ran_today: bool) -> tuple[list[date], str]:
+    """Real dates for the next three sessions, earliest first.
+
+    Anchored at tomorrow when today's run is already done, so the plan never
+    proposes a session that has already happened.
+    """
+    counts, _ = _run_day_history(workouts, today)
+    weekdays, source = _planned_weekdays(counts)
+    anchor = today + timedelta(days=1) if ran_today else today
+
+    dates = sorted({_next_date_for(wd, anchor) for wd in weekdays})
+    # A collapsed set (duplicate weekdays, or fewer than three) still has to
+    # yield three distinct days, so extend forward a week at a time.
+    while len(dates) < 3:
+        dates.append(max(dates) + timedelta(days=2) if dates else anchor)
+        dates = sorted(set(dates))
+    return dates[:3], source
+
+
+def _day_label(day: date, today: date) -> str:
+    """"Tue 21 Jul" — always names the weekday, which is the point."""
+    label = day.strftime("%a %-d %b")
+    if day == today:
+        return f"Today · {label}"
+    if day == today + timedelta(days=1):
+        return f"Tomorrow · {label}"
+    return label
+
+
+def _weekly_run_plan(
+    next_run: RunSessionSuggestion,
+    weekly_target: float,
+    score: float | None,
+    workouts: list,
+    today: date,
+    ran_today: bool,
+) -> list[RunSessionSuggestion]:
+    """Three sessions placed on real days.
+
+    The long run goes to whichever planned day the athlete historically covers
+    the most ground on — usually a weekend, but derived rather than assumed.
+    The remaining slot takes the quality session, which recovery can downgrade.
+    """
     easy = max(2.0, min(weekly_target * 0.25, next_run.distance_km))
     quality_allowed = score is None or score >= 58
     quality_type = "Intervals" if quality_allowed else "Recovery run"
     quality_dist = max(2.5, weekly_target * 0.30)
     long_dist = max(3.0, weekly_target - easy - quality_dist)
+
+    days, source = _schedule_run_days(workouts, today, ran_today)
+    _, averages = _run_day_history(workouts, today)
+
+    # The soonest day is the next run; of the two that remain, the long run
+    # takes the day historically covering the most distance.
+    first, rest = days[0], days[1:]
+    long_day = max(rest, key=lambda d: (averages.get(d.weekday(), 0.0), d.weekday()))
+    quality_day = next(d for d in rest if d != long_day)
+
+    scheduled_next = replace(
+        next_run, day_label=_day_label(first, today), day=first, day_source=source
+    )
     return [
-        next_run,
-        RunSessionSuggestion("Midweek", quality_type, f"{quality_type} - {quality_dist:.1f} km", "Quality only if legs and recovery agree.", round(quality_dist, 1), "moderate" if quality_allowed else "low"),
-        RunSessionSuggestion("Weekend", "Long run", f"Long run - {long_dist:.1f} km", "Keep it conversational; this is the aerobic anchor.", round(long_dist, 1), "low"),
+        scheduled_next,
+        RunSessionSuggestion(
+            _day_label(quality_day, today),
+            quality_type,
+            f"{quality_type} - {quality_dist:.1f} km",
+            "Quality only if legs and recovery agree.",
+            round(quality_dist, 1),
+            "moderate" if quality_allowed else "low",
+            day=quality_day,
+            day_source=source,
+        ),
+        RunSessionSuggestion(
+            _day_label(long_day, today),
+            "Long run",
+            f"Long run - {long_dist:.1f} km",
+            "Keep it conversational; this is the aerobic anchor.",
+            round(long_dist, 1),
+            "low",
+            day=long_day,
+            day_source=source,
+        ),
     ]
 
 
