@@ -7,6 +7,8 @@ export type Confidence = "high" | "medium" | "low";
 /** A daily point in a metric series. */
 export type SeriesPoint = { day: string; value: number };
 
+export type BaselineCoverage = { used: number; of: number };
+
 /** Mirrors metric_details.get_metric_detail() (audit §3). */
 export type MetricDetail = {
   kind: string;
@@ -20,6 +22,10 @@ export type MetricDetail = {
   series: SeriesPoint[];
   baseline7: number | null;
   baseline30: number | null;
+  /** What each baseline was drawn from — days the device was actually worn,
+   *  out of the days in the window. A baseline from 3 of 7 is a weaker claim. */
+  coverage7: BaselineCoverage | null;
+  coverage30: BaselineCoverage | null;
   band: [number, number] | null; // typical range
   lowerBetter: boolean;
   decimals: number;

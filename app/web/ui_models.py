@@ -200,6 +200,10 @@ def metric_detail(uid: int, kind: str, days: int = 90) -> dict | None:
         "series": series,
         "baseline7": raw["baseline7"],
         "baseline30": raw["baseline30"],
+        # What each baseline was actually drawn from, so a week with unworn
+        # days can say so rather than presenting a thin mean as a solid one.
+        "coverage7": raw.get("coverage7"),
+        "coverage30": raw.get("coverage30"),
         "band": list(band) if band else None,
         "lowerBetter": lower_better,
         "decimals": decimals,
