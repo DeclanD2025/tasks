@@ -4,8 +4,10 @@ import { PanelLeftClose, PanelLeft, RefreshCw, Sparkles, X } from "lucide-react"
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
+import { useApi } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { MOBILE_NAV, MORE_ITEMS, SIDEBAR_GROUPS } from "@/lib/nav";
+import type { SyncSource } from "@/lib/types";
 import { ThemeToggle } from "./theme";
 
 function useActive() {
@@ -86,9 +88,75 @@ function Sidebar() {
 }
 
 /* ============================================================ TopBar */
-function TopBar() {
+/** Today's date, rendered client-side.
+ *
+ * This is a static export, so anything computed at build time freezes on the
+ * build date. The date has to come from the device.
+ */
+function useToday() {
+  const [today, setToday] = useState<string | null>(null);
+  useEffect(() => {
+    const format = () =>
+      setToday(
+        new Date().toLocaleDateString("en-GB", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        }),
+      );
+    format();
+    // A tab left open overnight must not keep yesterday's date on screen.
+    const timer = setInterval(format, 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  return today;
+}
+
+/** The freshness chip: how many sources are current, from the real source list. */
+function SyncChip() {
+  const sources = useApi<{ sources: SyncSource[] }>("/sources");
+  if (!sources.data) return null;
+
+  const rows = sources.data.sources ?? [];
+  const live = rows.filter((s) => s.status === "ok");
+  const degraded = rows.filter((s) => s.status === "stale" || s.status === "error");
+  // Colour follows the worst state, so a green tick never hides a stale feed.
+  const tone = live.length === 0 ? "text-crit" : degraded.length ? "text-warn" : "text-good";
+
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-border bg-bg/85 px-4 backdrop-blur-md lg:px-6">
+    <Link
+      href="/data"
+      className="hidden items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-1 text-[12px] text-muted hover:text-text sm:inline-flex"
+      title={
+        degraded.length
+          ? `${degraded.length} source${degraded.length === 1 ? "" : "s"} need attention`
+          : "All connected sources are current"
+      }
+    >
+      <RefreshCw className={cn("size-3.5", tone)} />
+      <span className="font-mono">
+        {live.length}/{rows.length} live
+      </span>
+    </Link>
+  );
+}
+
+function TopBar() {
+  const today = useToday();
+
+  return (
+    <header
+      className="sticky top-0 z-30 flex min-h-14 items-center justify-between gap-3 border-b border-border bg-bg/85 px-4 backdrop-blur-md lg:px-6"
+      style={{
+        // The layout sets viewportFit: "cover", so on a notched phone the page
+        // extends beneath the status bar. Without these the wordmark collides
+        // with the clock and the controls sit under the battery icon.
+        paddingTop: "env(safe-area-inset-top)",
+        paddingLeft: "max(1rem, env(safe-area-inset-left))",
+        paddingRight: "max(1rem, env(safe-area-inset-right))",
+      }}
+    >
       <div className="flex items-center gap-2 lg:hidden">
         <span className="grid size-7 place-items-center rounded-lg bg-text text-bg">
           <Sparkles className="size-4" />
@@ -96,13 +164,10 @@ function TopBar() {
         <span className="text-[15px] font-semibold tracking-tight">Orion</span>
       </div>
       <div className="hidden text-[13px] text-muted lg:block">
-        <span className="font-mono text-faint">Fri 17 Jul 2026</span>
+        <span className="font-mono text-faint">{today ?? ""}</span>
       </div>
       <div className="flex items-center gap-2">
-        <Link href="/data" className="hidden items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-1 text-[12px] text-muted hover:text-text sm:inline-flex">
-          <RefreshCw className="size-3.5 text-good" />
-          <span className="font-mono">synced 8m</span>
-        </Link>
+        <SyncChip />
         <ThemeToggle />
         <Link href="/settings" aria-label="Profile" className="grid size-8 place-items-center rounded-full bg-surface-2 text-[12px] font-semibold text-text ring-1 ring-border">
           D
