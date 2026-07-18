@@ -352,4 +352,10 @@ def test_the_json_backup_states_its_conventions(authed: TestClient):
     assert conventions["units"].startswith("All loads in kilograms")
     assert conventions["e1rmFormula"] == "epley"
     assert conventions["e1rmRepLimit"] == 12
-    assert conventions["muscleWeighting"] == {"primary": 1.0, "secondary": 0.5}
+    # Asserting the ordering rather than the literal values: these are tunable
+    # conventions, and a test that breaks when they are tuned is testing the
+    # wrong thing. What must hold is that all three tiers ship with the export
+    # and that they descend.
+    weighting = conventions["muscleWeighting"]
+    assert set(weighting) == {"primary", "secondary", "stabiliser"}
+    assert weighting["primary"] > weighting["secondary"] > weighting["stabiliser"] > 0

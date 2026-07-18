@@ -46,7 +46,7 @@ from app.db.models import (
     StrengthWorkout,
     StrengthWorkoutExercise,
 )
-from app.domains.strength import calc, catalog
+from app.domains.strength import calc, catalog, muscles
 
 #: Minimum paired observations before any association is reported. Below this
 #: a correlation is a coin flip with a decimal point.
@@ -70,6 +70,9 @@ class SetRecord:
     movement_pattern: str
     primary_muscle: str
     secondary_muscles: list[str]
+    #: {"primary": [...], "secondary": [...], "stabiliser": [...]} from the
+    #: detailed anatomy model.
+    muscle_attribution: dict
     is_compound: bool
     set_type: str
     weight_kg: float
@@ -166,6 +169,14 @@ def _load_sets(
                     primary_muscle=snapshot.get("primaryMuscle") or exercise.primary_muscle,
                     secondary_muscles=list(
                         snapshot.get("secondaryMuscles") or exercise.secondary_muscles or []
+                    ),
+                    # Prefer the snapshot when a session recorded one, so a
+                    # later change to the anatomy map does not restate history.
+                    # Sessions logged before the detailed model existed fall
+                    # back to today's map rather than losing their attribution.
+                    muscle_attribution=(
+                        snapshot.get("muscleAttribution")
+                        or muscles.attribution_for(exercise.slug, exercise.primary_muscle)
                     ),
                     is_compound=bool(snapshot.get("isCompound", exercise.is_compound)),
                     set_type=calc.normalise_set_type(entry.set_type),
@@ -293,6 +304,108 @@ def muscle_volume(
             }
         )
     return sorted(rows, key=lambda r: r["directSets"], reverse=True)
+
+
+def detailed_muscle_volume(
+    sets: list[SetRecord], *, weighting: calc.MuscleWeighting | None = None
+) -> dict:
+    """Per-muscle breakdown across the 27-muscle model, grouped by region.
+
+    Reports the three tiers separately and a percentage share of the window's
+    total attributed work. The share is what makes a session legible at a
+    glance ("this was 45% chest") in a way raw set counts are not — but the
+    tiers stay visible underneath, because a muscle whose share is all
+    stabiliser work has not been trained in any meaningful sense.
+    """
+    w = weighting or calc.MuscleWeighting()
+    tiers: dict[str, dict[str, float]] = {}
+    volume: dict[str, float] = {}
+    weighted: dict[str, float] = {}
+    last_trained: dict[str, date] = {}
+    sessions: dict[str, set[int]] = {}
+
+    for s in sets:
+        for muscle, (share, tier) in calc.attribute_set_detailed(
+            s.muscle_attribution, weighting=w
+        ).items():
+            bucket = tiers.setdefault(
+                muscle, {"primary": 0.0, "secondary": 0.0, "stabiliser": 0.0}
+            )
+            bucket[tier] += 1
+            weighted[muscle] = weighted.get(muscle, 0.0) + share
+            volume[muscle] = volume.get(muscle, 0.0) + s.volume_kg * share
+            sessions.setdefault(muscle, set()).add(s.workout_id)
+            if muscle not in last_trained or s.day > last_trained[muscle]:
+                last_trained[muscle] = s.day
+
+    total_weighted = sum(weighted.values()) or 1.0
+    total_volume = sum(volume.values()) or 1.0
+    today = date.today()
+
+    rows = []
+    for muscle, bucket in tiers.items():
+        rows.append({
+            "muscle": muscle,
+            "region": muscles.region_for(muscle),
+            "primarySets": round(bucket["primary"], 1),
+            "secondarySets": round(bucket["secondary"], 1),
+            "stabiliserSets": round(bucket["stabiliser"], 1),
+            "weightedSets": round(weighted[muscle], 2),
+            # Two shares, because they answer different questions and disagree
+            # sharply. Set share is the programming currency ("sets per muscle
+            # per week"); volume share follows the tonnage and is dominated by
+            # whichever movement is heaviest. A session of heavy benching plus
+            # light pushdowns is ~45% chest by volume and ~14% by sets — both
+            # true, so neither is presented as *the* number.
+            "sharePercent": round(weighted[muscle] / total_weighted * 100, 1),
+            "volumeSharePercent": round(volume[muscle] / total_volume * 100, 1),
+            "volumeKg": round(volume[muscle], 1),
+            "sessions": len(sessions[muscle]),
+            "lastTrained": last_trained[muscle].isoformat(),
+            "daysSince": (today - last_trained[muscle]).days,
+            # True when nothing but stabiliser work touched this muscle — it
+            # appears in the chart but was not trained.
+            "stabiliserOnly": bucket["primary"] == 0 and bucket["secondary"] == 0,
+        })
+    rows.sort(key=lambda r: r["weightedSets"], reverse=True)
+
+    by_region: dict[str, float] = {}
+    by_region_volume: dict[str, float] = {}
+    for row in rows:
+        by_region[row["region"]] = by_region.get(row["region"], 0.0) + row["weightedSets"]
+        by_region_volume[row["region"]] = (
+            by_region_volume.get(row["region"], 0.0) + row["volumeKg"]
+        )
+    regions = [
+        {
+            "region": region,
+            "weightedSets": round(by_region[region], 2),
+            "sharePercent": round(by_region[region] / total_weighted * 100, 1),
+            "volumeKg": round(by_region_volume[region], 1),
+            "volumeSharePercent": round(by_region_volume[region] / total_volume * 100, 1),
+        }
+        for region in muscles.REGION_ORDER
+        if region in by_region
+    ]
+    regions.sort(key=lambda r: r["weightedSets"], reverse=True)
+
+    untrained = [
+        m for m in muscles.ALL_MUSCLES
+        if m not in tiers or tiers[m]["primary"] + tiers[m]["secondary"] == 0
+    ]
+
+    return {
+        "muscles": rows,
+        "regions": regions,
+        # Naming what got no direct work is often the more useful half: a
+        # missing muscle has no row to notice.
+        "untrained": untrained,
+        "weighting": w.as_dict(),
+        "note": (
+            "Attribution is a mapping convention based on movement mechanics, "
+            "not a measurement of your muscles."
+        ),
+    }
 
 
 def balance_ratios(sets: list[SetRecord]) -> dict:
@@ -726,6 +839,7 @@ def overview(user_id: int, *, days: int = 28) -> dict:
         "byExercise": volume_by_exercise(sets)[:12],
         "byMovement": volume_by_movement(sets),
         "byMuscle": muscle_volume(sets),
+        "detailedMuscles": detailed_muscle_volume(sets),
         "balance": balance_ratios(sets),
         "intensity": intensity_summary(sets),
         "warnings": programme_warnings(sets),

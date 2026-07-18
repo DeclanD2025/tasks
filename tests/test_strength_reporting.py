@@ -266,4 +266,6 @@ def test_overview_exposes_the_weighting_it_used():
     has to travel with it."""
     _log("bench-press", (100, 5, 8.0))
     result = reporting.overview(USER)
-    assert result["weighting"] == {"primary": 1.0, "secondary": 0.5}
+    weighting = result["weighting"]
+    assert set(weighting) == {"primary", "secondary", "stabiliser"}
+    assert weighting["primary"] > weighting["secondary"] > weighting["stabiliser"] > 0

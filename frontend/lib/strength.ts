@@ -225,6 +225,42 @@ export type VolumeSummary = {
   ratedSets: number;
 };
 
+/** One muscle in the 27-muscle detailed model. */
+export type DetailedMuscleRow = {
+  muscle: string;
+  region: string;
+  primarySets: number;
+  secondarySets: number;
+  stabiliserSets: number;
+  weightedSets: number;
+  /** Share of weighted sets — the programming currency. */
+  sharePercent: number;
+  /** Share of tonnage. Disagrees sharply with set share on heavy compounds,
+   *  which is why both are shown rather than one being picked silently. */
+  volumeSharePercent: number;
+  volumeKg: number;
+  sessions: number;
+  lastTrained: string;
+  daysSince: number;
+  /** Only stabiliser work touched this muscle — it appears, but was not trained. */
+  stabiliserOnly: boolean;
+};
+
+export type DetailedMuscles = {
+  muscles: DetailedMuscleRow[];
+  regions: {
+    region: string;
+    weightedSets: number;
+    sharePercent: number;
+    volumeKg: number;
+    volumeSharePercent: number;
+  }[];
+  /** Muscles with no direct work in the window. The gap is often the finding. */
+  untrained: string[];
+  weighting: { primary: number; secondary: number; stabiliser: number };
+  note: string;
+};
+
 export type MuscleRow = {
   muscle: string;
   directSets: number;
@@ -245,6 +281,7 @@ export type Analytics = {
   byExercise: { key: string; volumeKg: number; sets: number; hardSets: number; sessions: number }[];
   byMovement: { key: string; volumeKg: number; sets: number; hardSets: number; sessions: number }[];
   byMuscle: MuscleRow[];
+  detailedMuscles: DetailedMuscles;
   balance: {
     pushSets: number; pullSets: number; pushPull: number | null;
     squatSets: number; hingeSets: number; squatHinge: number | null;

@@ -19,7 +19,7 @@ import { Page } from "@/components/shell";
 import { Card, Chip, Meta, SectionHeader } from "@/components/ui";
 import { useApi } from "@/lib/api";
 import { domainStyle } from "@/lib/domains";
-import { type Analytics, formatVolume } from "@/lib/strength";
+import { type Analytics, type DetailedMuscles, formatVolume } from "@/lib/strength";
 
 const WINDOWS = [
   { days: 7, label: "7d" },
@@ -108,11 +108,13 @@ function AnalyticsBody({ data }: { data: Analytics }) {
         />
       </Card>
 
+      <DetailedMuscleBreakdown data={data.detailedMuscles} />
+
       {/* Muscle balance — what is actually being trained? */}
       <Card className="p-4 sm:p-5">
         <SectionHeader
-          title="Sets per muscle"
-          sub={`Direct sets. Indirect weighted at ${data.weighting.secondary}× and shown separately.`}
+          title="Sets per muscle group"
+          sub={`Coarse grouping. Indirect weighted at ${data.weighting.secondary}× and shown separately.`}
         />
         <table className="w-full text-[13px]">
           <thead>
@@ -325,6 +327,145 @@ function AnalyticsBody({ data }: { data: Analytics }) {
         </div>
       </Card>
     </>
+  );
+}
+
+/**
+ * The 27-muscle breakdown.
+ *
+ * Two things this deliberately refuses to do. It does not merge the three
+ * contribution tiers into one bar — a muscle whose share is entirely
+ * stabiliser work has not been trained, and a single bar would say it had. And
+ * it does not pick between set share and volume share: they disagree sharply
+ * on heavy compounds (a bench-led session is ~45% chest by tonnage and ~14% by
+ * sets) and both are true, so the reading is switchable and labelled.
+ */
+function DetailedMuscleBreakdown({ data }: { data: DetailedMuscles }) {
+  const [basis, setBasis] = useState<"sets" | "volume">("sets");
+  const [showAll, setShowAll] = useState(false);
+
+  if (data.muscles.length === 0) {
+    return null;
+  }
+
+  const key = basis === "sets" ? "sharePercent" : "volumeSharePercent";
+  const rows = [...data.muscles].sort((a, b) => b[key] - a[key]);
+  const visible = showAll ? rows : rows.slice(0, 12);
+  const max = Math.max(...rows.map((r) => r[key]), 1);
+
+  return (
+    <Card className="p-4 sm:p-5">
+      <SectionHeader
+        title="Muscle breakdown"
+        sub="27-muscle model. Front, side and rear delts counted separately."
+        action={
+          <div className="flex gap-1" role="group" aria-label="Weighting basis">
+            {(["sets", "volume"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setBasis(option)}
+                aria-pressed={basis === option}
+                className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${
+                  basis === option
+                    ? "border-border-strong bg-surface-2 text-text"
+                    : "border-border text-muted hover:text-text"
+                }`}
+              >
+                by {option}
+              </button>
+            ))}
+          </div>
+        }
+      />
+
+      {/* Regions first — six numbers are readable at a glance, 27 are not. */}
+      <ul className="mb-4 flex flex-wrap gap-x-4 gap-y-1.5">
+        {data.regions.map((region) => (
+          <li key={region.region} className="flex items-baseline gap-1.5">
+            <span className="text-[13px] text-text">{region.region}</span>
+            <span className="tnum text-[13px] font-semibold text-text">
+              {basis === "sets" ? region.sharePercent : region.volumeSharePercent}%
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <ul className="space-y-2">
+        {visible.map((row) => (
+          <li key={row.muscle}>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="truncate text-[13px] text-text">
+                {row.muscle}
+                {row.stabiliserOnly && (
+                  <span className="ml-1.5 text-[11px] text-faint">stabiliser only</span>
+                )}
+              </span>
+              <span className="tnum shrink-0 text-[12px] font-medium text-text">
+                {row[key]}%
+              </span>
+            </div>
+            {/* Three stacked segments, so direct work and stabiliser work stay
+                visually distinct rather than merging into one claim. */}
+            <div
+              className="mt-1 flex h-1.5 overflow-hidden rounded-full bg-surface-2"
+              aria-hidden="true"
+            >
+              {(["primarySets", "secondarySets", "stabiliserSets"] as const).map(
+                (tier, i) => {
+                  const total =
+                    row.primarySets + row.secondarySets + row.stabiliserSets || 1;
+                  const width = (row[tier] / total) * (row[key] / max) * 100;
+                  return width > 0 ? (
+                    <div
+                      key={tier}
+                      className="h-full"
+                      style={{
+                        ...domainStyle("strength"),
+                        width: `${width}%`,
+                        background: "var(--domain)",
+                        opacity: [1, 0.55, 0.28][i],
+                      }}
+                    />
+                  ) : null;
+                },
+              )}
+            </div>
+            <Meta className="mt-0.5 block">
+              {row.primarySets > 0 && `${row.primarySets} direct`}
+              {row.secondarySets > 0 && `${row.primarySets > 0 ? " · " : ""}${row.secondarySets} synergist`}
+              {row.stabiliserSets > 0 && `${row.primarySets > 0 || row.secondarySets > 0 ? " · " : ""}${row.stabiliserSets} stabiliser`}
+              {` · last ${row.daysSince === 0 ? "today" : `${row.daysSince}d ago`}`}
+            </Meta>
+          </li>
+        ))}
+      </ul>
+
+      {rows.length > 12 && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="mt-3 text-[12px] font-medium text-muted hover:text-text"
+        >
+          {showAll ? "Show top 12" : `Show all ${rows.length}`}
+        </button>
+      )}
+
+      {data.untrained.length > 0 && (
+        <div className="mt-4 border-t border-border pt-3">
+          {/* The gap is often the finding: a muscle with no row is easy to miss. */}
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+            No direct work in this window
+          </p>
+          <p className="mt-1 text-[12px] text-muted">{data.untrained.join(" · ")}</p>
+        </div>
+      )}
+
+      <p className="mt-3 text-[11px] text-faint">
+        {data.note} Synergists count {data.weighting.secondary}×, stabilisers{" "}
+        {data.weighting.stabiliser}×.
+      </p>
+    </Card>
   );
 }
 

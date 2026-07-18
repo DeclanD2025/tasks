@@ -342,13 +342,55 @@ DEFAULT_PRIMARY_WEIGHT = 1.0
 DEFAULT_SECONDARY_WEIGHT = 0.5
 
 
+#: A stabiliser holds position or assists slightly. Counting it equal to a
+#: synergist would make a bench press look like trap training; ignoring it
+#: entirely pretends the rotator cuff did nothing.
+DEFAULT_STABILISER_WEIGHT = 0.25
+
+
 @dataclass(frozen=True)
 class MuscleWeighting:
     primary: float = DEFAULT_PRIMARY_WEIGHT
     secondary: float = DEFAULT_SECONDARY_WEIGHT
+    stabiliser: float = DEFAULT_STABILISER_WEIGHT
 
     def as_dict(self) -> dict:
-        return {"primary": self.primary, "secondary": self.secondary}
+        return {
+            "primary": self.primary,
+            "secondary": self.secondary,
+            "stabiliser": self.stabiliser,
+        }
+
+    def weight_for(self, tier: str) -> float:
+        return {
+            "primary": self.primary,
+            "secondary": self.secondary,
+            "stabiliser": self.stabiliser,
+        }.get(tier, 0.0)
+
+
+def attribute_set_detailed(
+    attribution: dict,
+    *,
+    weighting: MuscleWeighting | None = None,
+) -> dict[str, tuple[float, str]]:
+    """Split one set across the detailed muscle model.
+
+    Takes ``{"primary": [...], "secondary": [...], "stabiliser": [...]}`` and
+    returns ``{muscle: (share, tier)}``. The tier travels with the share so the
+    UI can keep direct work visually distinct from stabiliser work — they are
+    different claims and should not be summed into one bar.
+
+    A muscle appearing in more than one tier is counted once, at its highest,
+    rather than accumulating across tiers on a mis-tagged exercise.
+    """
+    w = weighting or MuscleWeighting()
+    out: dict[str, tuple[float, str]] = {}
+    for tier in ("primary", "secondary", "stabiliser"):
+        for muscle in attribution.get(tier) or []:
+            if muscle and muscle not in out:
+                out[muscle] = (w.weight_for(tier), tier)
+    return out
 
 
 def attribute_set_to_muscles(

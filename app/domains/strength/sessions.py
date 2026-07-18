@@ -40,7 +40,7 @@ from app.db.models import (
     StrengthWorkoutTemplate,
     utcnow,
 )
-from app.domains.strength import calc, catalog, records
+from app.domains.strength import calc, catalog, muscles, records
 
 log = get_logger(__name__)
 
@@ -121,6 +121,9 @@ def _classification_snapshot(exercise: StrengthExercise) -> dict:
     return {
         "primaryMuscle": exercise.primary_muscle,
         "secondaryMuscles": list(exercise.secondary_muscles or []),
+        "muscleAttribution": muscles.attribution_for(
+            exercise.slug, exercise.primary_muscle
+        ),
         "movementPattern": exercise.movement_pattern,
         "familySlug": exercise.family_slug,
         "loadType": exercise.load_type,
