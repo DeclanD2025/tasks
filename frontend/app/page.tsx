@@ -301,8 +301,11 @@ function PriorityCard({
 // 3. Today's flow — open space stays open
 // --------------------------------------------------------------------------- //
 function Flow({ brief }: { brief: Brief }) {
-  const remaining = brief.timeline.filter((item) => !item.past);
-  const calendar = brief.sources.calendar;
+  // Defaulted rather than assumed present. A brief that arrives without a
+  // section should cost that section, not the whole page — the alternative is
+  // one absent key white-screening the homepage, which is exactly what it did.
+  const remaining = (brief.timeline ?? []).filter((item) => !item.past);
+  const calendar = brief.sources?.calendar;
 
   return (
     <section aria-labelledby="flow-heading">
@@ -406,7 +409,7 @@ function humanise(key: string): string {
 // 5. Review — what replaces the overdue counter
 // --------------------------------------------------------------------------- //
 function Review({ brief }: { brief: Brief }) {
-  const buckets = brief.review.buckets.filter((b) => b.count > 0);
+  const buckets = (brief.review?.buckets ?? []).filter((b) => b.count > 0);
   if (buckets.length === 0) return null;
 
   return (
@@ -419,7 +422,7 @@ function Review({ brief }: { brief: Brief }) {
       </h2>
       {/* The reframing, in prose, before any counts. */}
       <p className="mb-3 max-w-[58ch] text-[14px] leading-relaxed text-text">
-        {brief.review.headline}
+        {brief.review?.headline}
       </p>
       <ul className="space-y-1.5">
         {buckets.map((bucket) => (

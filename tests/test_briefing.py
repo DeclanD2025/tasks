@@ -335,6 +335,63 @@ def test_generating_twice_reuses_the_stored_brief():
         assert len(s.scalars(select(DailyBrief).where(DailyBrief.user_id == USER)).all()) == 1
 
 
+def test_a_reused_brief_has_the_same_shape_as_a_fresh_one():
+    """The cached read and the fresh build must agree on their keys.
+
+    They did not. `_persist` stored the narrative and dropped `review`,
+    `timeline` and `sources`, so the second visit of the day served a payload
+    three keys short and the homepage died on `brief.timeline.filter`. Every
+    test until now called `generate(force=True)` and so only ever exercised the
+    path that worked.
+
+    Comparing key sets rather than named keys is deliberate: a future section
+    added to one path and not the other fails here without anyone remembering
+    to extend this test.
+    """
+    fresh = brief_service.generate(USER, force=True)
+    cached = brief_service.generate(USER)
+    assert set(fresh) == set(cached)
+    for key in ("review", "timeline", "sources"):
+        assert cached[key] is not None, f"{key} missing from the reused brief"
+
+
+def test_the_live_sections_are_recomputed_rather_than_frozen():
+    """A brief written this morning must not still claim this morning's backlog.
+
+    The narrative is frozen on purpose; these are not. Completing a task has to
+    show up on the next load, or the page spends the afternoon confidently
+    describing a list that no longer exists.
+    """
+    brief_service.generate(USER, force=True)
+    with session_scope() as s:
+        task = Task(
+            user_id=USER, title="Live section probe", status="todo",
+            due_date=date.today() - timedelta(days=3), area="Probe",
+        )
+        s.add(task)
+        s.flush()
+        task_id = task.id
+
+    try:
+        after = brief_service.generate(USER)  # cached path — no force
+        titles = [
+            ex["title"]
+            for bucket in after["review"]["buckets"]
+            for ex in bucket["examples"]
+        ]
+        assert "Live section probe" in titles
+    finally:
+        with session_scope() as s:
+            for row in s.scalars(
+                select(BriefEvent).where(BriefEvent.task_id == task_id)
+            ).all():
+                s.delete(row)
+            s.flush()
+            row = s.get(Task, task_id)
+            if row is not None:
+                s.delete(row)
+
+
 def test_the_brief_refuses_to_describe_recovery_without_current_health_data():
     stale = {
         "health": dq._judge("health", "Health data", date.today() - timedelta(days=30), 5),

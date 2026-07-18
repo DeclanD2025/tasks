@@ -291,7 +291,9 @@ def generate(uid: int, *, day: date | None = None, force: bool = False) -> dict:
     if not force:
         existing = _load(uid, day)
         if existing and existing.get("daypart") == part:
-            return existing
+            # The stored brief holds the narrative only. The live sections are
+            # recomputed on every read — see _live_sections for why.
+            return {**existing, **_live_sections(uid, day, part)}
 
     quality = dq.assess(uid)
     recovery = personal_os.get_recovery_snapshot(uid)
@@ -303,35 +305,63 @@ def generate(uid: int, *, day: date | None = None, force: bool = False) -> dict:
         minutes_available=_DAYPART_MINUTES.get(part),
         energy=_energy_from(recovery),
     )
-    review = review_mod.review_buckets(tasks, today=day)
+    live = _live_sections(uid, day, part, quality=quality, tasks=tasks)
     summary, evidence = _state_summary(recovery, quality, part, _latest_health(uid))
     insight = _select_insight(uid, snap, recovery, quality)
     warnings = dq.warnings_from(quality)
+    generated_at = utcnow()
 
     payload = {
         "day": day.isoformat(),
         "daypart": part,
         "stateSummary": summary,
-        "focus": _focus(chosen, review, part, quality),
+        "focus": _focus(chosen, live["review"], part, quality),
         "nextAction": _next_action(chosen),
         "priorities": [p.as_dict() for p in chosen],
         "insight": insight,
-        "review": review,
-        "timeline": _timeline(uid, day, part, quality),
         "evidence": evidence,
         "dataQuality": warnings,
-        "sources": {k: v.as_dict() for k, v in quality.items()},
         "confidence": _confidence(quality, chosen),
         "ruleVersion": RULE_VERSION,
         "sourceDataAt": (
             dq.source_timestamp(quality).isoformat()
             if dq.source_timestamp(quality) else None
         ),
+        "edited": False,
+        "generatedAt": generated_at.isoformat(),
+        **live,
     }
 
-    _persist(uid, day, payload)
+    _persist(uid, day, payload, generated_at=generated_at)
     _log_generated(uid, day, chosen)
     return payload
+
+
+def _live_sections(
+    uid: int, day: date, part: str, *, quality: dict | None = None,
+    tasks: list | None = None,
+) -> dict:
+    """The parts of the brief that must reflect *now*, not when it was written.
+
+    The narrative — how you're doing, what to focus on, the three priorities —
+    is deliberately frozen for the day, so the page does not rewrite itself
+    under the operator mid-glance. These three are the opposite: the backlog
+    shrinks as tasks get done, the timeline's "next up" moves as the day
+    passes, and a source that went stale an hour ago must say so. Freezing them
+    would make the page quietly lie by lunchtime.
+
+    Keeping them in one function is also what stops the stored brief and the
+    freshly generated one from having different shapes — the bug that took the
+    homepage down, because the frontend read `timeline` off a cached payload
+    that never carried it.
+    """
+    quality = dq.assess(uid) if quality is None else quality
+    tasks = get_tasks(uid, include_done=False) if tasks is None else tasks
+    return {
+        "review": review_mod.review_buckets(tasks, today=day),
+        "timeline": _timeline(uid, day, part, quality),
+        "sources": {k: v.as_dict() for k, v in quality.items()},
+    }
 
 
 def _energy_from(recovery) -> str:
@@ -355,7 +385,9 @@ def _confidence(quality: dict, chosen: list) -> str:
     return "high"
 
 
-def _persist(uid: int, day: date, payload: dict) -> None:
+def _persist(
+    uid: int, day: date, payload: dict, *, generated_at: datetime | None = None
+) -> None:
     with session_scope() as s:
         row = s.scalars(
             select(DailyBrief).where(DailyBrief.user_id == uid, DailyBrief.day == day)
@@ -373,7 +405,7 @@ def _persist(uid: int, day: date, payload: dict) -> None:
         row.data_quality = payload["dataQuality"]
         row.confidence = payload["confidence"]
         row.rule_version = payload["ruleVersion"]
-        row.generated_at = utcnow()
+        row.generated_at = generated_at or utcnow()
         if payload["sourceDataAt"]:
             row.source_data_at = datetime.fromisoformat(payload["sourceDataAt"])
 
