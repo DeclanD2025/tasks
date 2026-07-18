@@ -318,6 +318,10 @@ def status_strip(uid: int) -> list[dict]:
         trend = detail["trend"]
         baseline = detail["baseline7"]
         coverage = detail.get("coverage7") or {}
+        # How old the reading actually is. `latest` is the last *recorded*
+        # value, not necessarily a recent one — mood stopped arriving weeks ago
+        # and was still being shown as today's check-in.
+        age_days = _reading_age_days(detail.get("series") or [])
         if detail["latest"] is None:
             delta_text = "not recorded today"
         elif baseline is None:
@@ -342,13 +346,90 @@ def status_strip(uid: int) -> list[dict]:
             "unit": unit,
             "trend": trend,
             "deltaText": delta_text,
+            "ageDays": age_days,
+            "ageLabel": _age_label(age_days),
+            # A reading older than a week is not today's state. Saying so is
+            # the difference between a gap you can act on and a wrong number.
+            "stale": age_days is not None and age_days > 7,
             "tone": "flat" if detail["latest"] is None
             else _tone(trend, lower_better=lower_better),
         })
     return out
 
 
+def _reading_age_days(series: list[dict]) -> int | None:
+    if not series:
+        return None
+    try:
+        last = date.fromisoformat(series[-1]["day"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return max(0, (date.today() - last).days)
+
+
+def _age_label(age_days: int | None) -> str:
+    if age_days is None:
+        return ""
+    if age_days == 0:
+        return "today"
+    if age_days == 1:
+        return "yesterday"
+    return f"{age_days} days ago"
+
+
 # ------------------------------------------------------------------- today
+
+
+def _task_demands(uid: int) -> dict:
+    """What is actually owed today, and the few most pressing items.
+
+    Deliberately a summary, not a list: a backlog in the hundreds would swamp
+    Today, but its size is the single largest fact about the day and was not
+    shown anywhere. ``soonest`` names a handful so the number has texture; the
+    page links through to Tasks for the rest.
+    """
+    today_date = date.today()
+    tasks = services.get_tasks(uid, include_done=False)
+
+    overdue = [t for t in tasks if t["due_date"] and t["due_date"] < today_date]
+    due_today = [t for t in tasks if t["due_date"] == today_date]
+    undated = [t for t in tasks if not t["due_date"]]
+
+    # Most overdue first — the ones that have been owed longest lead.
+    pressing = sorted(overdue, key=lambda t: t["due_date"]) + sorted(
+        due_today, key=lambda t: (t["priority"] != "high", t["title"])
+    )
+
+    return {
+        "open": len(tasks),
+        "overdue": len(overdue),
+        "dueToday": len(due_today),
+        "undated": len(undated),
+        "soonest": [
+            {
+                "id": t["id"],
+                "title": t["title"],
+                "area": t["area"],
+                "priority": t["priority"],
+                "dueLabel": _due_label(t["due_date"], today_date),
+                "overdue": bool(t["due_date"] and t["due_date"] < today_date),
+            }
+            for t in pressing[:4]
+        ],
+    }
+
+
+def _due_label(due: date | None, today_date: date) -> str:
+    if due is None:
+        return "no date"
+    days = (today_date - due).days
+    if days == 0:
+        return "due today"
+    if days == 1:
+        return "1 day late"
+    if days > 1:
+        return f"{days} days late"
+    return f"due in {abs(days)}d"
 
 
 def _recommendation(
@@ -379,6 +460,51 @@ def _recommendation(
         else "medium",
         "evidence": evidence,
         "actions": [{"label": "View evidence", "kind": "ghost"}],
+    }
+
+
+def _lede(strip: list[dict], demands: dict, snap: personal_os.TodaySnapshot) -> dict:
+    """The one-line read on today, assembled from facts already computed.
+
+    This deliberately introduces no new opinion. Everything here is a fact the
+    strip or the task summary already established, phrased as a sentence — so
+    the lede can never contradict the recommendation card beneath it, and there
+    is no second reasoning layer to keep in sync.
+
+    Clauses are dropped rather than softened when their data is missing: a
+    lede with one true clause is worth more than three padded ones.
+    """
+    clauses: list[str] = []
+
+    current = {s["kind"]: s for s in strip if not s["stale"] and s["value"]}
+    readiness, sleep = current.get("readiness"), current.get("sleep")
+
+    if readiness:
+        drift = {"up": "and rising", "down": "and falling"}.get(readiness["trend"], "")
+        clauses.append(f"Recovery {readiness['value']}{readiness['unit']} {drift}".strip())
+    if sleep:
+        clauses.append(f"{sleep['value']} sleep")
+
+    body = ", ".join(clauses) + "." if clauses else ""
+
+    # The demand clause leads with whatever is genuinely largest.
+    overdue, due_today = demands["overdue"], demands["dueToday"]
+    if overdue:
+        demand = f"{overdue} task{'s' if overdue != 1 else ''} past due"
+        if due_today:
+            demand += f", {due_today} due today"
+        demand += "."
+    elif due_today:
+        demand = f"{due_today} task{'s' if due_today != 1 else ''} due today."
+    else:
+        demand = ""
+
+    return {
+        "state": body,
+        "demand": demand,
+        # The day's nudge, which is about something other than training and so
+        # must not be confused with the recommendation's reasoning.
+        "nudge": snap.suggested_action or "",
     }
 
 
@@ -449,6 +575,8 @@ def today(uid: int) -> dict:
     recovery = personal_os.get_recovery_snapshot(uid)
     run_plan = personal_os.get_run_plan_snapshot(uid, recovery)
     snap = personal_os.get_today_snapshot(uid, recovery=recovery, run_plan=run_plan)
+    strip = status_strip(uid)
+    demands = _task_demands(uid)
     return {
         "user": {"name": _display_name(uid), "today": date.today().isoformat()},
         "status": snap.status,
@@ -457,7 +585,9 @@ def today(uid: int) -> dict:
         "estimated": snap.estimated,
         "freshness": snap.freshness_label,
         "sleepDebtLabel": snap.sleep_debt_label,
-        "statusStrip": status_strip(uid),
+        "statusStrip": strip,
+        "lede": _lede(strip, demands, snap),
+        "tasks": demands,
         "recommendation": _recommendation(snap, recovery),
         # Today shows the next run and the sync list too. Serving them here
         # spares the page two more round trips into the same read models.
