@@ -28,6 +28,53 @@ from app.domains.health import derived
 HAE_SOURCE = "Health Auto Export → Apple Health"
 
 
+# Plausibility gates for baselines.
+#
+# Health Auto Export records a day whether or not the device was actually worn,
+# so the series carries two populations: real days, and fragments. A 27-minute
+# "night" or a 16-step "day" is the watch being off, not a bad night or a
+# sedentary day — and averaging them in halves the baseline every delta on
+# Today is drawn against.
+#
+# Nothing stored distinguishes "genuinely bad" from "not captured", so this is
+# a threshold judgement, not a measurement. It is deliberately loose: it
+# excludes what cannot be a real day, not what looks like a poor one. The
+# sleep bounds are ``derived.py``'s existing sleep-need window, reused rather
+# than redefined so the two layers cannot drift apart.
+#
+# Metrics absent from this map are ungated — a resting heart rate or an HRV
+# reading only exists when the watch took it, so there is no fragment case.
+_PLAUSIBLE_RANGE: dict[str, tuple[float, float]] = {
+    "sleep": (derived.MIN_PLAUSIBLE_SLEEP_MIN / 60.0, derived.MAX_PLAUSIBLE_SLEEP_MIN / 60.0),
+    "steps": (500.0, 100_000.0),
+    "active_energy": (50.0, 10_000.0),
+}
+
+
+def _plausible(values: list[float], kind: str) -> list[float]:
+    bounds = _PLAUSIBLE_RANGE.get(kind)
+    if bounds is None:
+        return [v for v in values if v is not None]
+    low, high = bounds
+    return [v for v in values if v is not None and low <= v <= high]
+
+
+def _baseline(
+    values: list[float], kind: str, window: int, *, minimum: int
+) -> tuple[float | None, dict | None]:
+    """Mean of the window's plausible days, plus what it was drawn from.
+
+    Returns ``(baseline, coverage)`` where coverage is ``{"used", "of"}``.
+    Falls back to None — never to a number computed from too little — so the
+    caller shows "baseline building" rather than a confident wrong figure.
+    """
+    window_values = values[-window:]
+    usable = _plausible(window_values, kind)
+    if len(usable) < minimum:
+        return None, {"used": len(usable), "of": len(window_values)}
+    return round(mean(usable), 2), {"used": len(usable), "of": len(window_values)}
+
+
 @dataclass(frozen=True)
 class MetricSpec:
     kind: str
@@ -383,13 +430,17 @@ def _rolling(series: list[dict], window: int) -> list[dict]:
     return out
 
 
-def _typical_band(values: list[float]) -> list[float] | None:
+def _typical_band(values: list[float], kind: str = "") -> list[float] | None:
     """The user's own habitual range: the interquartile band of recent points.
 
     Honest and personal — the shaded zone shows where this body usually sits,
     not a clinical reference range. Needs enough points to be meaningful.
+
+    Gated on the same plausibility bounds as the baselines: an unworn-watch day
+    would otherwise drag the band's floor down and make genuinely low days look
+    typical.
     """
-    recent = values[-45:]
+    recent = _plausible(values[-45:], kind)
     if len(recent) < 8:
         return None
     ordered = sorted(recent)
@@ -461,8 +512,8 @@ def get_metric_detail(uid: int, kind: str, days: int = 90) -> dict | None:
         latest = series[-1]["value"] if series else None
 
     values = [p["value"] for p in series]
-    baseline7 = round(mean(values[-7:]), 2) if len(values) >= 3 else None
-    baseline30 = round(mean(values[-30:]), 2) if len(values) >= 10 else None
+    baseline7, coverage7 = _baseline(values, kind, 7, minimum=3)
+    baseline30, coverage30 = _baseline(values, kind, 30, minimum=10)
     freshness = series[-1]["day"] if series else None
 
     return {
@@ -474,7 +525,12 @@ def get_metric_detail(uid: int, kind: str, days: int = 90) -> dict | None:
         "rolling7": _rolling(series, 7) if len(series) >= 5 else [],
         "baseline7": baseline7,
         "baseline30": baseline30,
-        "band": _typical_band(values),
+        # How many of the window's days actually qualified. A baseline drawn
+        # from 3 of 7 days is a weaker claim than one drawn from 7, and the UI
+        # has to be able to say so.
+        "coverage7": coverage7,
+        "coverage30": coverage30,
+        "band": _typical_band(values, kind),
         "lower_better": spec.lower_better,
         "decimals": spec.decimals,
         "meaning": spec.meaning,

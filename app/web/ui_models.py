@@ -313,6 +313,7 @@ def status_strip(uid: int) -> list[dict]:
         lower_better = detail["lowerBetter"]
         trend = detail["trend"]
         baseline = detail["baseline7"]
+        coverage = detail.get("coverage7") or {}
         if detail["latest"] is None:
             delta_text = "not recorded today"
         elif baseline is None:
@@ -324,6 +325,11 @@ def status_strip(uid: int) -> list[dict]:
                 f"{sign}{abs(diff):,.{detail['decimals']}f} vs 7-day "
                 f"{baseline:,.{detail['decimals']}f}"
             )
+            # Say what the baseline rests on when the week is not fully
+            # captured, so a thin average is not read as a solid one.
+            used, of = coverage.get("used"), coverage.get("of")
+            if used is not None and of and used < of:
+                delta_text += f" ({used} of {of} days)"
         out.append({
             "kind": kind,
             "label": label,
