@@ -637,6 +637,13 @@ class StrengthExercise(Base):
     is_compound: Mapped[bool] = mapped_column(default=False)
     unilateral: Mapped[bool] = mapped_column(default=False)
     laterality: Mapped[str] = mapped_column(String(24), default="bilateral")
+    #: True when the recorded weight is *per implement* and both limbs are
+    #: loaded at once — a dumbbell press logged as "22 kg" moves 44 kg. Every
+    #: tracker records the number on one dumbbell, so without this flag the
+    #: whole dumbbell half of a training log reads at half its real volume.
+    #: False for single-implement work (goblet squat, kettlebell swing) and for
+    #: unilateral work, where the sides are counted through reps instead.
+    weight_is_per_limb: Mapped[bool] = mapped_column(default=False)
     load_type: Mapped[str] = mapped_column(String(24), default="external", index=True)
     measurement: Mapped[str] = mapped_column(String(16), default="reps")
     default_unit: Mapped[str] = mapped_column(String(8), default="kg")

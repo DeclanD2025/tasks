@@ -201,6 +201,7 @@ _STRENGTH_COLUMNS: dict[str, dict[str, str]] = {
         "family_slug": "VARCHAR(120) NOT NULL DEFAULT ''",
         "is_compound": "BOOLEAN NOT NULL DEFAULT 0",
         "laterality": "VARCHAR(24) NOT NULL DEFAULT 'bilateral'",
+        "weight_is_per_limb": "BOOLEAN NOT NULL DEFAULT 0",
         "load_type": "VARCHAR(24) NOT NULL DEFAULT 'external'",
         "measurement": "VARCHAR(16) NOT NULL DEFAULT 'reps'",
         "default_unit": "VARCHAR(8) NOT NULL DEFAULT 'kg'",

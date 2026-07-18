@@ -139,6 +139,10 @@ class SetInput:
     right_reps: int | None = None
     left_weight_kg: float | None = None
     right_weight_kg: float | None = None
+    #: How many implements the recorded weight applies to. 2 for bilateral
+    #: dumbbell work, where "22 kg" means one dumbbell in each hand and the
+    #: load actually moved is 44. 1 for everything else.
+    limb_multiplier: float = 1.0
 
 
 #: Fraction of bodyweight a movement loads when the exercise has not specified
@@ -160,7 +164,9 @@ def effective_load_kg(s: SetInput) -> float:
       help each week reads as progress rather than as falling volume.
     """
     load_type = (s.load_type or "external").lower()
-    added = float(s.weight_kg or 0.0)
+    # A per-implement weight is scaled up here rather than at entry, so the
+    # number the operator typed still matches the number on the dumbbell.
+    added = float(s.weight_kg or 0.0) * float(s.limb_multiplier or 1.0)
 
     if load_type == "external":
         return added

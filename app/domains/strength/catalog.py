@@ -223,6 +223,12 @@ def classify(
     else:
         load_type = "external"
 
+    # Bilateral dumbbell work records the weight of *one* dumbbell while both
+    # are being moved. Kettlebell work in this catalogue is single-implement
+    # (goblet squat, swing, Russian twist) so it is not doubled, and unilateral
+    # work counts its sides through reps instead.
+    per_limb = equipment == "Dumbbell" and not unilateral
+
     return {
         "slug": slug,
         "family_slug": family_for(slug),
@@ -230,6 +236,7 @@ def classify(
         "measurement": measurement,
         "load_type": load_type,
         "laterality": "unilateral_separate" if unilateral else "bilateral",
+        "weight_is_per_limb": per_limb,
         "is_compound": movement not in _ISOLATION_PATTERNS,
         "increment_kg": _INCREMENTS.get(equipment, 2.5),
         "bar_weight_kg": _BAR_WEIGHTS.get(equipment),
@@ -309,6 +316,10 @@ def enrich_catalog(*, force: bool = False) -> int:
                 if ex.is_compound != facts["is_compound"]:
                     ex.is_compound = facts["is_compound"]
                     changed = True
+            if force or not ex.weight_is_per_limb:
+                if ex.weight_is_per_limb != facts["weight_is_per_limb"]:
+                    ex.weight_is_per_limb = facts["weight_is_per_limb"]
+                    changed = True
             if force or ex.increment_kg == 2.5:
                 if ex.increment_kg != facts["increment_kg"]:
                     ex.increment_kg = facts["increment_kg"]
@@ -331,3 +342,12 @@ def enrich_catalog(*, force: bool = False) -> int:
 def bodyweight_factor_for(exercise: StrengthExercise) -> float | None:
     """The exercise's own bodyweight fraction, if it has one."""
     return (exercise.tracking_config or {}).get("bodyweight_factor")
+
+
+def limb_multiplier_for(exercise: StrengthExercise) -> float:
+    """How many implements the recorded weight applies to.
+
+    2 for bilateral dumbbell work — "22 kg" on a dumbbell press means one in
+    each hand, and the load moved is 44. Everything else is 1.
+    """
+    return 2.0 if getattr(exercise, "weight_is_per_limb", False) else 1.0

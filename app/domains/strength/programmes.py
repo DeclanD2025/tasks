@@ -81,6 +81,7 @@ def _exercise_summary(ex: StrengthExercise) -> dict:
         "loadType": ex.load_type,
         "measurement": ex.measurement,
         "laterality": ex.laterality,
+        "weightIsPerLimb": bool(ex.weight_is_per_limb),
         "isCompound": bool(ex.is_compound),
         "incrementKg": ex.increment_kg,
         "barWeightKg": ex.bar_weight_kg,

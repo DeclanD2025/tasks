@@ -33,7 +33,7 @@ from app.db.models import (
     StrengthWorkoutExercise,
     StrengthWorkoutTemplate,
 )
-from app.domains.strength import calc, catalog
+from app.domains.strength import calc, catalog, records
 
 EXPORT_VERSION = 1
 TABLES = ("sets", "sessions", "exercises", "records", "programmes")
@@ -83,6 +83,7 @@ def set_rows(user_id: int) -> list[dict]:
                 assistance_kg=entry.assistance_kg, rpe=entry.rpe, rir=entry.rir,
                 to_failure=bool(entry.to_failure),
                 left_reps=entry.left_reps, right_reps=entry.right_reps,
+                limb_multiplier=catalog.limb_multiplier_for(exercise),
             )
             est = calc.estimate_1rm(calc.effective_load_kg(si), entry.reps)
             out.append({
@@ -115,6 +116,9 @@ def set_rows(user_id: int) -> list[dict]:
                 "tempo": entry.tempo,
                 "rest_seconds": entry.rest_seconds,
                 "load_type": load_type,
+                # 2 when the weight column is per dumbbell, so a reader can see
+                # why effective_load_kg is double what was typed.
+                "limb_multiplier": catalog.limb_multiplier_for(exercise),
                 "bodyweight_kg": entry.bodyweight_kg,
                 "bodyweight_factor": entry.bodyweight_factor,
                 "assistance_kg": entry.assistance_kg,
@@ -343,6 +347,7 @@ def import_sessions(user_id: int, payload: dict, *, source: str = "import") -> d
 
     imported = skipped = duplicates = 0
     problems: list[str] = []
+    imported_ids: list[int] = []
 
     with session_scope() as s:
         known = {ex.slug: ex for ex in s.scalars(select(StrengthExercise)).all()}
@@ -395,6 +400,19 @@ def import_sessions(user_id: int, payload: dict, *, source: str = "import") -> d
                         workout_id=workout.id,
                         exercise_id=exercise.id,
                         sort_order=len(blocks) + 1,
+                        # Which machine, which pulley ratio, which grip. A cable
+                        # stack at 2:1 and the same number at 1:1 are different
+                        # loads, so dropping this makes the numbers incomparable
+                        # to any other session on different kit.
+                        equipment_variation=set_row.get("equipment_variation") or "",
+                        classification_snapshot={
+                            "primaryMuscle": exercise.primary_muscle,
+                            "secondaryMuscles": list(exercise.secondary_muscles or []),
+                            "movementPattern": exercise.movement_pattern,
+                            "familySlug": exercise.family_slug,
+                            "loadType": exercise.load_type,
+                            "isCompound": bool(exercise.is_compound),
+                        },
                     )
                     s.add(block)
                     s.flush()
@@ -409,6 +427,9 @@ def import_sessions(user_id: int, payload: dict, *, source: str = "import") -> d
                         rpe=set_row.get("rpe"),
                         rir=set_row.get("rir"),
                         duration_seconds=set_row.get("duration_seconds"),
+                        # Most trackers record rest between sets and it is the
+                        # only signal for how a session was actually paced.
+                        rest_seconds=set_row.get("rest_seconds"),
                         notes=set_row.get("notes") or "",
                         bodyweight_kg=set_row.get("bodyweight_kg"),
                         source=source,
@@ -417,10 +438,17 @@ def import_sessions(user_id: int, payload: dict, *, source: str = "import") -> d
                     )
                 )
             imported += 1
+            imported_ids.append(workout.id)
+
+    # Records are derived from sets, so an import that does not rebuild them
+    # leaves a year of history with no personal bests behind it.
+    for workout_id in imported_ids:
+        records.rebuild_records_for_workout(user_id, workout_id)
 
     return {
         "imported": imported,
         "duplicatesSkipped": duplicates,
         "skipped": skipped,
         "problems": sorted(set(problems)),
+        "recordsRebuilt": len(imported_ids),
     }

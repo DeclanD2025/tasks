@@ -150,6 +150,7 @@ def _load_sets(
                 right_reps=entry.right_reps,
                 left_weight_kg=entry.left_weight_kg,
                 right_weight_kg=entry.right_weight_kg,
+                limb_multiplier=catalog.limb_multiplier_for(exercise),
             )
             load = calc.effective_load_kg(si)
             est = calc.estimate_1rm(load, entry.reps)

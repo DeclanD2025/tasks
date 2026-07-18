@@ -589,6 +589,7 @@ def session_detail(user_id: int, workout_id: int) -> dict:
                     "primaryMuscle": exercise.primary_muscle,
                     "loadType": exercise.load_type,
                     "measurement": exercise.measurement,
+                    "limbMultiplier": catalog.limb_multiplier_for(exercise),
                     "incrementKg": exercise.increment_kg,
                     "barWeightKg": exercise.bar_weight_kg,
                     "section": block.section,
@@ -697,6 +698,7 @@ def session_summary(user_id: int, workout_id: int) -> dict:
                 to_failure=s_["toFailure"],
                 left_reps=s_["leftReps"],
                 right_reps=s_["rightReps"],
+                limb_multiplier=block.get("limbMultiplier", 1.0),
             )
             for s_ in block["sets"]
         ]

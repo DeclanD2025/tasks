@@ -109,6 +109,7 @@ def _load_history(s, user_id: int, exercise_id: int) -> list[PerformedSet]:
             right_reps=entry.right_reps,
             left_weight_kg=entry.left_weight_kg,
             right_weight_kg=entry.right_weight_kg,
+            limb_multiplier=catalog.limb_multiplier_for(exercise),
         )
         est = calc.estimate_1rm(
             calc.effective_load_kg(si), entry.reps, formula=DEFAULT_E1RM_FORMULA
