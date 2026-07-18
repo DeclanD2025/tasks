@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from statistics import mean
 
+from app.db.database import session_scope
+from app.db.models import Domain, Insight
 from app.domains import personal_os
 
 SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2, "positive": 3}
@@ -24,6 +26,7 @@ METRIC_UNITS = {
     "Mindfulness": "min",
     "Mood": "",
     "Respiratory Rate": "/min",
+    "Blood Pressure": "mmHg",
 }
 
 # Drilldown keys: which metric cards open which detail drawer (see routes/api.py).
@@ -39,6 +42,7 @@ METRIC_DETAIL_KEYS = {
     "Mood": "mood",
     "Workout Load": "training_load",
     "VO2 Max": "vo2max",
+    "Blood Pressure": "blood_pressure",
 }
 
 
@@ -120,3 +124,26 @@ def money(value: float) -> str:
 
 def detail_key(label: str) -> str:
     return METRIC_DETAIL_KEYS.get(label, "")
+
+
+def health_insights(user_id: int) -> list[dict]:
+    """Return recent health-domain insights in the format the insight_queue macro expects."""
+    with session_scope() as s:
+        rows = (
+            s.query(Insight)
+            .filter(Insight.user_id == user_id, Insight.domain == Domain.health)
+            .order_by(Insight.created_at.desc())
+            .limit(10)
+            .all()
+        )
+    return [
+        {
+            "title": row.title,
+            "explanation": row.body,
+            "severity": row.severity.value,
+            "area": "Health",
+            "action": "Review trend",
+            "confidence": "high",
+        }
+        for row in rows
+    ]

@@ -54,6 +54,8 @@ _ALIASES: dict[str, set[str]] = {
     "active_energy_kcal": {"activeenergyburned", "activeenergy", "activecalories"},
     "exercise_minutes": {"appleexercisetime", "exercisetime", "workoutminutes"},
     "respiratory_rate": {"respiratoryrate", "respirationrate"},
+    "bp_systolic": {"bloodpressuresystolic", "bpsystolic", "systolic"},
+    "bp_diastolic": {"bloodpressurediastolic", "bpdiastolic", "diastolic"},
     "sleep_minutes": {"sleepanalysis", "sleep"},
     "mindful_minutes": {"mindfulminutes", "mindfulness", "mindfulsession"},
     "mood": {"stateofmind", "state_of_mind", "mood"},

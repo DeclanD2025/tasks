@@ -20,6 +20,7 @@ from sqlalchemy import delete, select
 from app.core.logging import get_logger
 from app.db.database import session_scope
 from app.db.models import Domain, Insight, InsightSeverity, Workout
+from app.domains import settings_service
 from app.services import (
     activity_frame,
     health_frame,
@@ -288,6 +289,74 @@ def rule_project_output_vs_average(user_id: int) -> list[InsightDraft]:
     return []
 
 
+def rule_blood_pressure_elevation(user_id: int) -> list[InsightDraft]:
+    """Flag sustained BP elevation or an unusual jump over the last 7 days."""
+    settings = settings_service.get_settings_snapshot(user_id)
+    elevation_sys = float(settings.get("bp_elevation_systolic", 130))
+    elevation_dia = float(settings.get("bp_elevation_diastolic", 80))
+    delta_sys = float(settings.get("bp_delta_systolic", 10))
+    delta_dia = float(settings.get("bp_delta_diastolic", 6))
+
+    df = health_frame(user_id, days=30).dropna(subset=["bp_systolic", "bp_diastolic"])
+    recent = df.tail(7)
+    if len(recent) < 3:
+        return []
+    recent_sys = float(recent["bp_systolic"].mean())
+    recent_dia = float(recent["bp_diastolic"].mean())
+
+    # Compare the last 7 days against the previous 7 days when available,
+    # otherwise fall back to all earlier readings.
+    if len(df) >= 14:
+        prior = df.iloc[-14:-7]
+    elif len(df) > 7:
+        prior = df.iloc[:-7]
+    else:
+        prior = df.iloc[:0]
+
+    if len(prior) >= 3:
+        prior_sys = float(prior["bp_systolic"].mean())
+        prior_dia = float(prior["bp_diastolic"].mean())
+    else:
+        prior_sys, prior_dia = recent_sys, recent_dia
+
+    sys_delta = recent_sys - prior_sys
+    dia_delta = recent_dia - prior_dia
+
+    # Sustained elevation: configured threshold (default hypertension stage 1).
+    elevated = recent_sys >= elevation_sys or recent_dia >= elevation_dia
+    # Unusual delta: sharp jump vs the user's own recent baseline.
+    jumped = sys_delta >= delta_sys or dia_delta >= delta_dia
+
+    if not elevated and not jumped:
+        return []
+
+    if elevated:
+        body = f"Average {recent_sys:.0f}/{recent_dia:.0f} mmHg"
+        if (prior_sys, prior_dia) != (recent_sys, recent_dia):
+            body += f" (was {prior_sys:.0f}/{prior_dia:.0f})."
+        return [
+            InsightDraft(
+                Domain.health,
+                InsightSeverity.warning,
+                "Blood pressure is elevated over the last 7 days.",
+                body,
+                "blood_pressure_elevated",
+                round(recent_sys, 1),
+            )
+        ]
+    return [
+        InsightDraft(
+            Domain.health,
+            InsightSeverity.info,
+            "Blood pressure jumped compared to your recent baseline.",
+            f"Average {recent_sys:.0f}/{recent_dia:.0f} mmHg vs prior "
+            f"{prior_sys:.0f}/{prior_dia:.0f} mmHg (+{sys_delta:.0f}/{dia_delta:.0f}).",
+            "blood_pressure_jump",
+            round(sys_delta, 1),
+        )
+    ]
+
+
 RULES: list[Callable[[int], list[InsightDraft]]] = [
     rule_spending_vs_last_month,
     rule_sleep_week_over_week,
@@ -298,6 +367,7 @@ RULES: list[Callable[[int], list[InsightDraft]]] = [
     rule_mindfulness_consistency,
     rule_mood_lower_on_short_sleep,
     rule_project_output_vs_average,
+    rule_blood_pressure_elevation,
 ]
 
 

@@ -48,11 +48,11 @@
   </div>
   <div class="health-factors">
     {% for f in snap.factors %}
-    <button type="button" class="health-factor {{ 'absent' if not f.present else '' }}" data-detail="{{ FACTOR_DETAIL_KEYS.get(f.label, '') }}">
+    <button type="button" class="health-factor {{ 'absent' if not f.present else '' }}" data-detail="{{ FACTOR_DETAIL_KEYS.get(f.label, '') }}" style="animation-delay: {{ loop.index0 * 0.06 }}s;">
       <span class="health-factor-label">{{ f.label }}</span>
       <span class="health-factor-value">{{ f.value }}</span>
       <span class="health-factor-impact">{{ f.impact }}</span>
-      <span class="health-factor-delta {{ 'positive' if f.delta >= 0 else 'negative' }}">
+      <span class="health-factor-delta {{ 'positive' if f.delta >= 0 else 'negative' }}" data-tooltip="Score contribution vs neutral baseline (50)">
         {{ '+' if f.delta > 0 }}{{ '%.0f' % f.delta }}
       </span>
     </button>
@@ -68,7 +68,7 @@
   </div>
   <div class="health-primary-grid">
     {% for m in signals.primary %}
-    <article class="health-signal {{ m.quality }} {{ 'partial' if m.is_partial_day else '' }} health-signal-{{ m.label | lower | replace(' ', '-') | replace('/', '-') }}">
+    <article class="health-signal {{ m.quality }} {{ 'partial' if m.is_partial_day else '' }} health-signal-{{ m.label | lower | replace(' ', '-') | replace('/', '-') }}" style="animation-delay: {{ loop.index0 * 0.08 }}s;">
       <div class="health-signal-head">
         <span class="health-signal-label">{{ SIGNAL_GLYPHS.get(m.label, '') }} {{ m.label }}</span>
         {% if m.is_partial_day %}<span class="health-signal-partial">{{ m.partial_note }}</span>{% endif %}
@@ -158,6 +158,17 @@
 </details>
 {% endif %}
 
+{# Insights — health-domain findings from the analytics engine #}
+{% if insights %}
+<section class="health-section">
+  <div class="health-section-head">
+    <h2>Findings</h2>
+    <p class="health-section-sub">Recent signals from your health data.</p>
+  </div>
+  {{ ui.insight_queue(insights) }}
+</section>
+{% endif %}
+
 {# Changes — open list #}
 <section class="health-section">
   <div class="health-section-head">
@@ -177,6 +188,7 @@
   <div class="health-deepdives">
     <button type="button" class="btn ghost" data-detail="hrv">HRV</button>
     <button type="button" class="btn ghost" data-detail="resting_hr">Resting HR</button>
+    <button type="button" class="btn ghost" data-detail="blood_pressure">Blood Pressure</button>
     <button type="button" class="btn ghost" data-detail="weight">Weight</button>
     <button type="button" class="btn ghost" data-detail="vo2max">VO₂ max</button>
     <button type="button" class="btn ghost" data-detail="training_load">Strain</button>

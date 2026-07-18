@@ -64,6 +64,26 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         "weight_goal_kg", "Weight goal", None, "number", "kg", "body",
         "Optional. Weight is reported as a trend, not a judgement.", min=30, max=250,
     ),
+    SettingSpec(
+        "bp_elevation_systolic", "BP elevation systolic", 130, "number", "mmHg", "body",
+        "Recent average systolic above this value triggers a blood pressure elevation insight.",
+        min=80, max=200,
+    ),
+    SettingSpec(
+        "bp_elevation_diastolic", "BP elevation diastolic", 80, "number", "mmHg", "body",
+        "Recent average diastolic above this value triggers a blood pressure elevation insight.",
+        min=40, max=140,
+    ),
+    SettingSpec(
+        "bp_delta_systolic", "BP delta systolic", 10, "number", "mmHg", "body",
+        "Week-over-week systolic jump above this value triggers a blood pressure jump insight.",
+        min=0, max=50,
+    ),
+    SettingSpec(
+        "bp_delta_diastolic", "BP delta diastolic", 6, "number", "mmHg", "body",
+        "Week-over-week diastolic jump above this value triggers a blood pressure jump insight.",
+        min=0, max=50,
+    ),
     # -- nutrition
     SettingSpec("calorie_target", "Calorie target", 2400, "number", "kcal", "nutrition",
                 "", min=1000, max=6000),

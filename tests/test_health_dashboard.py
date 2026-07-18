@@ -99,3 +99,24 @@ def test_partial_day_metrics_are_flagged_for_today():
     assert steps is not None
     assert steps.is_partial_day is True
     assert "not over yet" in steps.interpretation
+
+
+def test_blood_pressure_metric_combines_systolic_and_diastolic():
+    from datetime import date
+
+    from app.db.database import session_scope
+    from app.db.models import HealthMetricDaily
+
+    uid = services.get_default_user_id()
+    with session_scope() as s:
+        row = s.query(HealthMetricDaily).filter_by(user_id=uid, day=date.today()).first()
+        if row is None:
+            row = HealthMetricDaily(user_id=uid, day=date.today())
+            s.add(row)
+        row.extra = {**(row.extra or {}), "bp_systolic": 120, "bp_diastolic": 80}
+
+    recovery = get_recovery_snapshot(uid)
+    bp = next((m for m in recovery.metrics if m.label == "Blood Pressure"), None)
+    assert bp is not None
+    assert bp.value == "120/80 mmHg"
+    assert bp.quality == "real"

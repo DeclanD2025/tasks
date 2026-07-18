@@ -22,6 +22,8 @@ _EXTRA_KEYS = (
     "vo2max",
     "respiratory_rate",
     "active_energy_kcal",
+    "bp_systolic",
+    "bp_diastolic",
 )
 _COLUMN_KEYS = ("sleep_minutes", "hrv_ms", "resting_hr", "weight_kg")
 _ACTIVITY_COLUMN_MAP = {"steps": "steps", "exercise_minutes": "active_minutes"}

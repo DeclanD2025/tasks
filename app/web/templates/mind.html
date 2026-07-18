@@ -49,13 +49,13 @@
     <h2>{{ 'Start with one honest minute.' if phase == 'morning' else 'Close the loop cleanly.' }}</h2>
   </div>
   <div class="mind-launch-grid">
-    <a class="mind-launch-card {{ 'active' if phase == 'morning' else '' }}" href="/mind/morning">
+    <a class="mind-launch-card {{ 'active' if phase == 'morning' else '' }} cascade-in" style="animation-delay: 0.00s" href="/mind/morning">
       <span class="eyebrow">Morning brief</span>
       <strong>{{ 'All set for the morning.' if t.get('intention') else 'Begin the day.' }}</strong>
       <p>{{ t.get('intention') or 'Mood, energy, anxiety, sleep, influences, and one clear intention.' }}</p>
       <span class="launch-action">Open full-screen log</span>
     </a>
-    <a class="mind-launch-card {{ 'active' if phase == 'evening' else '' }}" href="/mind/evening">
+    <a class="mind-launch-card {{ 'active' if phase == 'evening' else '' }} cascade-in" style="animation-delay: 0.08s" href="/mind/evening">
       <span class="eyebrow">Evening reflection</span>
       <strong>{{ 'Evening logged.' if evening_done else 'Wrap up the day.' }}</strong>
       <p>{{ (t.get('evening_note') or 'Day rating, stress, reflection, thought check, and tomorrow protection.') | truncate(120) }}</p>
@@ -65,7 +65,7 @@
 </section>
 
 {% if reflection %}
-<section class="mind-card">
+<section class="mind-card cascade-in" style="animation-delay: 0.12s">
   <span class="eyebrow">Pattern readout</span>
   {% if reflection.trap_hits %}
   {% for hit in reflection.trap_hits %}
@@ -131,11 +131,11 @@
   </form>
 </section>
 
-<section class="mind-card">
+<section class="mind-card cascade-in" style="animation-delay: 0.12s">
   <span class="eyebrow">virtues</span>
   <div class="virtues editorial-virtues">
     {% for v in stoic.virtues %}
-    <div class="virtue">
+    <div class="virtue cascade-in" style="animation-delay: {{ (loop.index0 * 0.06) | round(2) }}s">
       <span class="name">{{ v.name }}</span>
       <span class="greek">{{ v.greek }}</span>
       <div class="score">{{ v.display }}{% if v.has_data %}<small> /100</small>{% endif %}</div>
@@ -309,7 +309,7 @@
 </section>
 
 {% if snap.recent_reflections %}
-<section class="mind-card">
+<section class="mind-card cascade-in" style="animation-delay: 0.12s">
   <span class="eyebrow">history</span>
   <div class="reflection-list">
     {% for item in snap.recent_reflections %}

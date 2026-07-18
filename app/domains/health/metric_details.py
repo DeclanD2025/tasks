@@ -175,6 +175,16 @@ METRIC_SPECS: dict[str, MetricSpec] = {
         decimals=0,
         related=("sleep", "hrv", "resting_hr", "training_load"),
     ),
+    "blood_pressure": MetricSpec(
+        "blood_pressure", "Blood pressure", "mmHg", HAE_SOURCE,
+        "Systolic over diastolic pressure. A single reading is less useful "
+        "than the trend over weeks; watch for sustained elevation.",
+        "Apple Health blood pressure samples, latest systolic and diastolic.",
+        decimals=0,
+        missing_action="Add 'Blood Pressure' to your HAE export, then import "
+                       "on the Data tab.",
+        related=("resting_hr", "hrv"),
+    ),
 }
 
 
@@ -275,6 +285,53 @@ def _strain_series(uid: int, days: int) -> list[dict]:
     ]
 
 
+def _latest_blood_pressure(uid: int) -> tuple[float | None, float | None]:
+    """Return the most recent stored systolic/diastolic pair, if any."""
+    with session_scope() as s:
+        row = s.scalars(
+            select(HealthMetricDaily)
+            .where(HealthMetricDaily.user_id == uid)
+            .where(HealthMetricDaily.extra.is_not(None))
+            .order_by(HealthMetricDaily.day.desc())
+            .limit(1)
+        ).first()
+    if row is None:
+        return None, None
+    extra = row.extra or {}
+    try:
+        return float(extra["bp_systolic"]), float(extra["bp_diastolic"])
+    except (KeyError, TypeError, ValueError):
+        return None, None
+
+
+def _blood_pressure_series(uid: int, days: int) -> list[dict]:
+    """Latest blood pressure per day as mean arterial pressure.
+
+    Systolic and diastolic are stored in HealthMetricDaily.extra. The drilldown
+    shows the combined pressure trend; the exact pair is surfaced in facts.
+    """
+    since = date.today() - timedelta(days=days)
+    with session_scope() as s:
+        rows = s.execute(
+            select(HealthMetricDaily.day, HealthMetricDaily.extra)
+            .where(HealthMetricDaily.user_id == uid, HealthMetricDaily.day >= since)
+            .order_by(HealthMetricDaily.day)
+        ).all()
+    out = []
+    for day, extra in rows:
+        extra = extra or {}
+        sys = extra.get("bp_systolic")
+        dia = extra.get("bp_diastolic")
+        if sys is None or dia is None:
+            continue
+        try:
+            map_value = (float(sys) + 2 * float(dia)) / 3
+        except (TypeError, ValueError):
+            continue
+        out.append({"day": day.isoformat(), "value": round(map_value, 1)})
+    return out
+
+
 def _series_for(uid: int, kind: str, days: int) -> list[dict]:
     if kind == "sleep":
         return _health_column_series(uid, HealthMetricDaily.sleep_minutes, days,
@@ -301,6 +358,8 @@ def _series_for(uid: int, kind: str, days: int) -> list[dict]:
         return _stress_series(uid, days)
     if kind == "training_load":
         return _strain_series(uid, days)
+    if kind == "blood_pressure":
+        return _blood_pressure_series(uid, days)
     return []
 
 
@@ -374,6 +433,18 @@ def get_metric_detail(uid: int, kind: str, days: int = 90) -> dict | None:
             facts.append({"label": "Week trend",
                           "value": f"{abs(debt.trend_minutes) / 60:.1f} h {direction}",
                           "detail": "Debt now vs one week ago."})
+    elif kind == "blood_pressure":
+        series = _series_for(uid, kind, days)
+        latest_sys, latest_dia = _latest_blood_pressure(uid)
+        latest = None
+        if latest_sys is not None and latest_dia is not None:
+            latest = f"{latest_sys:.0f}/{latest_dia:.0f}"
+            facts = [
+                {"label": "Systolic", "value": f"{latest_sys:.0f} mmHg",
+                 "detail": "Pressure when the heart contracts."},
+                {"label": "Diastolic", "value": f"{latest_dia:.0f} mmHg",
+                 "detail": "Pressure when the heart relaxes."},
+            ]
     else:
         series = _series_for(uid, kind, days)
         latest = series[-1]["value"] if series else None

@@ -601,6 +601,18 @@ def _health_metric_cards(
     respiratory = _values(extra, "respiratory_rate")
     add("Respiratory Rate", f"{_latest(respiratory):.1f}/min" if respiratory else "-", respiratory, "context for sleep and illness" if respiratory else "optional export", "real" if respiratory else "missing")
 
+    bp_sys = _values(extra, "bp_systolic")
+    bp_dia = _values(extra, "bp_diastolic")
+    if bp_sys and bp_dia:
+        latest_sys = _latest(bp_sys)
+        latest_dia = _latest(bp_dia)
+        bp_value = f"{latest_sys:.0f}/{latest_dia:.0f} mmHg" if latest_sys is not None and latest_dia is not None else "-"
+        # Combine into a single series for sparkline: use mean arterial pressure.
+        bp_series = [(s + d * 2) / 3 for s, d in zip(bp_sys, bp_dia)]
+        add("Blood Pressure", bp_value, bp_series, "latest reading from Apple Health", "real")
+    else:
+        add("Blood Pressure", "-", [], "export blood pressure from Health Auto Export", "missing")
+
     return cards
 
 

@@ -186,14 +186,18 @@ def health_frame(user_id: int, days: int = 30) -> pd.DataFrame:
                 HealthMetricDaily.hrv_ms,
                 HealthMetricDaily.resting_hr,
                 HealthMetricDaily.weight_kg,
+                HealthMetricDaily.extra,
             )
             .where(HealthMetricDaily.user_id == user_id)
             .where(HealthMetricDaily.day >= since)
         ).all()
-    return pd.DataFrame(
+    df = pd.DataFrame(
         rows,
-        columns=["day", "sleep_minutes", "hrv_ms", "resting_hr", "weight_kg"],
-    ).sort_values("day")
+        columns=["day", "sleep_minutes", "hrv_ms", "resting_hr", "weight_kg", "extra"],
+    )
+    for col in ("bp_systolic", "bp_diastolic"):
+        df[col] = df["extra"].apply(lambda x: (x or {}).get(col))
+    return df.drop(columns=["extra"]).sort_values("day")
 
 
 def mood_frame(user_id: int, days: int = 30) -> pd.DataFrame:

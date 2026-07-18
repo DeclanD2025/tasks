@@ -44,7 +44,7 @@
   {% set run_ratio = (run.week_distance_km / run.weekly_target_km * 100) if run.weekly_target_km else 0 %}
   {% set strength_goal = 3 %}
   {% set strength_ratio = (strength.week_sessions / strength_goal * 100) if strength_goal else 0 %}
-  <article class="fitness-card">
+  <article class="fitness-card cascade-in" style="animation-delay: 0.00s">
     <div class="fitness-card-head">
       <h2>Weekly running</h2>
       <strong>{{ run.week_distance_km }}<small> / {{ run.weekly_target_km }} km</small></strong>
@@ -62,7 +62,7 @@
     </div>
   </article>
 
-  <article class="fitness-card">
+  <article class="fitness-card cascade-in" style="animation-delay: 0.08s">
     <div class="fitness-card-head">
       <h2>Strength consistency</h2>
       <strong>{{ strength.week_sessions }}<small> / {{ strength_goal }}</small></strong>
@@ -75,7 +75,7 @@
     <p>{% if strength.week_sessions %}{{ strength.last_trained_label }}. Next bias: {{ strength.next_muscle }}.{% else %}No strength logged this week. Start with a simple full-body baseline.{% endif %}</p>
   </article>
 
-  <article class="fitness-card">
+  <article class="fitness-card cascade-in" style="animation-delay: 0.16s">
     <div class="fitness-card-head">
       <h2>Readiness</h2>
       <strong>{{ '%.0f' % readiness if readiness is not none else '—' }}<small>{% if readiness is not none %}/100{% endif %}</small></strong>
@@ -104,7 +104,7 @@
   <div class="week-plan" aria-label="This week's planned training">
     {% for day in plan_days %}
     {% set day_sessions = planned_sessions.get(day, []) %}
-    <article class="day-column {{ 'today' if day == plan_today else '' }}">
+    <article class="day-column {{ 'today' if day == plan_today else '' }} cascade-in" style="animation-delay: {{ (loop.index0 * 0.05) | round(2) }}s">
       <div class="day-column-head">
         <span>{{ day.strftime('%a') }}</span>
         <strong>{{ day.strftime('%d') }}</strong>

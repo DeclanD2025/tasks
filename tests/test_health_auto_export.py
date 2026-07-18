@@ -517,6 +517,41 @@ def test_upsert_metric_rows_updates_extra_keys():
         assert row.extra["mood"] == 0.8
 
 
+def test_parse_payload_extracts_blood_pressure():
+    payload = {"data": {"metrics": [
+        {"name": "blood_pressure_systolic", "units": "mmHg",
+         "data": [{"qty": 120, "date": "2026-06-14 08:00:00 +0000"}]},
+        {"name": "blood_pressure_diastolic", "units": "mmHg",
+         "data": [{"qty": 80, "date": "2026-06-14 08:00:00 +0000"}]},
+    ]}}
+    rows = parse_payload(payload)
+    assert len(rows) == 1
+    assert rows[0]["bp_systolic"] == 120
+    assert rows[0]["bp_diastolic"] == 80
+
+
+def test_upsert_metric_rows_stores_blood_pressure():
+    from app.db.database import session_scope
+
+    uid = services.get_default_user_id()
+    records = [
+        {
+            "day": "2025-01-19",
+            "bp_systolic": 118,
+            "bp_diastolic": 76,
+        }
+    ]
+    with session_scope() as session:
+        upsert_metric_rows(session, uid, records)
+        row = (
+            session.query(HealthMetricDaily)
+            .filter_by(user_id=uid, day="2025-01-19")
+            .one()
+        )
+        assert row.extra["bp_systolic"] == 118
+        assert row.extra["bp_diastolic"] == 76
+
+
 def test_upsert_metric_rows_backfills_health_to_existing_activity_day():
     from app.db.database import session_scope
 
