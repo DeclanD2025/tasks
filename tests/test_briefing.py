@@ -392,6 +392,48 @@ def test_the_live_sections_are_recomputed_rather_than_frozen():
                 s.delete(row)
 
 
+def test_the_focus_line_does_not_repeat_the_staleness_caveat():
+    """One caveat, one place.
+
+    The focus sentence used to append "(Task list is out of date...)" while the
+    data-quality line said the same thing with a date attached, three lines
+    below. Two statements of one fact read as two problems.
+    """
+    stale = {
+        "tasks": dq._judge("tasks", "Tasks", date.today() - timedelta(days=20), 5),
+        "calendar": dq._judge("calendar", "Calendar", date.today(), 5),
+        "health": dq._judge("health", "Health", date.today(), 5),
+    }
+    chosen = prio.select_priorities(
+        [{
+            "id": 1, "title": "A thing", "area": "Work", "status": "todo",
+            "due_date": date.today() - timedelta(days=2), "priority": "medium",
+            "created_at": datetime.now(),
+        }],
+        today=date.today(), limit=3,
+    )
+    focus = brief_service._focus(chosen, {}, "morning", stale)
+    assert "out of date" not in focus.lower()
+    # ...and the caveat still exists, on the line that can date it.
+    assert any("last updated" in w["message"] for w in dq.warnings_from(stale))
+
+
+def test_a_priority_reports_which_reason_it_headlined():
+    """The UI suppresses a reason it is already displaying. Matching on prose to
+    do that would break the first time the wording changed."""
+    chosen = prio.select_priorities(
+        [{
+            "id": 1, "title": "Late thing", "area": "Work", "status": "todo",
+            "due_date": date.today() - timedelta(days=19), "priority": "medium",
+            "created_at": datetime.now(),
+        }],
+        today=date.today(), limit=1,
+    )
+    payload = chosen[0].as_dict()
+    assert payload["whyKey"] == "overdue"
+    assert payload["why"].startswith("19 days past")
+
+
 def test_the_brief_refuses_to_describe_recovery_without_current_health_data():
     stale = {
         "health": dq._judge("health", "Health data", date.today() - timedelta(days=30), 5),

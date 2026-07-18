@@ -25,6 +25,8 @@ export type Priority = {
   components: ScoreComponent[];
   /** The single most load-bearing reason, for the card. */
   why: string;
+  /** Key of the component `why` describes, so the UI can avoid restating it. */
+  whyKey: string;
   selectedBy: "you" | "orion";
   pinned: boolean;
 };

@@ -76,6 +76,10 @@ class ScoredTask:
             "score": round(self.score, 1),
             "components": [c.as_dict() for c in self.components],
             "why": self.headline_reason(),
+            # Lets the UI drop a reason it is already showing. "19 days past its
+            # date" beside a row that reads "19 days past" is the same fact
+            # twice; the key makes that detectable without matching on prose.
+            "whyKey": self.headline_key(),
             "selectedBy": "you" if self.pinned else "orion",
             "pinned": self.pinned,
         }
@@ -86,10 +90,21 @@ class ScoredTask:
         Picks the largest positive component rather than concatenating all of
         them: a card that lists six reasons has explained nothing.
         """
+        component = self._headline_component()
+        if component is None:
+            return "No strong signal — surfaced because little else is scheduled."
+        return component.detail
+
+    def headline_key(self) -> str:
+        """The key of the reason `headline_reason` describes, or "" if none."""
+        component = self._headline_component()
+        return component.key if component else ""
+
+    def _headline_component(self) -> Component | None:
         positives = [c for c in self.components if c.points > 0]
         if not positives:
-            return "No strong signal — surfaced because little else is scheduled."
-        return max(positives, key=lambda c: c.points).detail
+            return None
+        return max(positives, key=lambda c: c.points)
 
 
 def _project_of(area: str | None) -> str:

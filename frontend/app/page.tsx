@@ -31,7 +31,7 @@ import {
   Check, ChevronDown, ChevronRight, Clock, Info, Pin, SkipForward,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import { Loaded } from "@/components/loading";
 import { Page } from "@/components/shell";
 import { Button, Card, Meta } from "@/components/ui";
@@ -65,12 +65,12 @@ function Home({ initial }: { initial: Brief }) {
         <Priorities brief={brief} onChange={setBrief} onRefresh={refresh} />
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1.45fr_1fr]">
-        <div className="space-y-6">
+      <div className="grid gap-x-8 gap-y-4 lg:grid-cols-[1.45fr_1fr]">
+        <div className="space-y-4">
           <Flow brief={brief} />
           <Review brief={brief} />
         </div>
-        <div className="space-y-6">
+        <div className="space-y-4">
           {"title" in brief.insight && <Insight brief={brief} />}
           <Progress />
         </div>
@@ -93,32 +93,27 @@ function Orientation({ brief }: { brief: Brief }) {
   const blocking = brief.dataQuality.filter((w) => w.severity === "warning");
 
   return (
-    <header className="pt-1">
-      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">
-        {dayHeading(brief.day, brief.daypart)}
-      </p>
+    <header>
+      {/* Set at reading size, not display size. This is a status line — one
+          sentence about how you are — and at 32px a sentence becomes a poster
+          that costs a third of the screen before a single task appears.
 
-      <h1 className="mt-2 max-w-[34ch] text-[26px] font-semibold leading-[1.25] tracking-tight text-text lg:text-[32px]">
+          The old "NEXT <task>" block lived here too, and always named the first
+          priority. The row below is marked "Next" instead, so the answer is
+          attached to the thing you act on rather than printed twice. */}
+      <div className="flex flex-wrap items-baseline gap-x-2.5">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">
+          {dayHeading(brief.day, brief.daypart)}
+        </p>
+        {brief.focus && <p className="text-[13px] text-muted">{brief.focus}</p>}
+      </div>
+
+      <h1 className="mt-1 max-w-[68ch] text-[19px] font-semibold leading-snug tracking-tight text-text lg:text-[21px]">
         {brief.stateSummary}
       </h1>
 
-      {brief.focus && (
-        <p className="mt-3 max-w-[52ch] text-[16px] leading-relaxed text-muted lg:text-[17px]">
-          {brief.focus}
-        </p>
-      )}
-
-      {brief.nextAction && (
-        <div className="mt-5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <span className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-            Next
-          </span>
-          <span className="text-[17px] font-medium text-text">{brief.nextAction}</span>
-        </div>
-      )}
-
       {blocking.length > 0 && (
-        <p className="mt-4 max-w-[62ch] border-l-2 border-border-strong pl-3 text-[13px] leading-relaxed text-muted">
+        <p className="mt-1.5 max-w-[80ch] text-[12px] leading-relaxed text-faint">
           {blocking.map((w) => w.message).join(" ")}
         </p>
       )}
@@ -139,11 +134,11 @@ function Priorities({
   onRefresh: () => void;
 }) {
   return (
-    <section aria-labelledby="priorities-heading" className="space-y-2.5">
+    <section aria-labelledby="priorities-heading" className="space-y-1.5">
       <div className="flex items-baseline justify-between gap-3">
         <h2
           id="priorities-heading"
-          className="text-[13px] font-semibold uppercase tracking-wide text-muted"
+          className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted"
         >
           Worth finishing
         </h2>
@@ -152,24 +147,45 @@ function Priorities({
         </Link>
       </div>
 
-      {brief.priorities.map((priority) => (
-        <PriorityCard
-          key={priority.taskId}
-          priority={priority}
-          onChange={onChange}
-          onRefresh={onRefresh}
-        />
-      ))}
+      {/* One bordered container with divided rows, not three separate cards.
+          Three cards drew three borders and three shadows around three lines of
+          text — the chrome outweighed the content and pushed everything below
+          the fold. */}
+      <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
+        {brief.priorities.map((priority, i) => (
+          <PriorityRow
+            key={priority.taskId}
+            priority={priority}
+            isNext={i === 0}
+            onChange={onChange}
+            onRefresh={onRefresh}
+          />
+        ))}
+      </div>
     </section>
   );
 }
 
-function PriorityCard({
+/**
+ * One task, one row.
+ *
+ * The row carries what identifies the task — title, project, how late it is —
+ * and nothing that restates it. `why` is the top-scoring reason, and for an
+ * overdue task that reason *is* the date, so it is suppressed rather than
+ * printed a second line below the date it repeats.
+ *
+ * Actions stay small and unlabelled. Three labelled buttons per row is a
+ * toolbar attached to a sentence; the icons carry accessible names and a
+ * tooltip, which is what a label is for.
+ */
+function PriorityRow({
   priority,
+  isNext,
   onChange,
   onRefresh,
 }: {
   priority: Priority;
+  isNext: boolean;
   onChange: (b: Brief) => void;
   onRefresh: () => void;
 }) {
@@ -188,95 +204,89 @@ function PriorityCard({
   };
 
   const due = dueLabel(priority.dueDate);
+  // The row already shows the due label; repeating it as prose says nothing new.
+  const showWhy = priority.why && priority.whyKey !== "overdue";
 
   return (
-    <Card className="p-4">
-      <div className="flex flex-wrap items-baseline gap-x-2">
-        <h3 className="text-[16px] font-medium leading-snug text-text">{priority.title}</h3>
-        {priority.pinned && (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted">
-            <Pin className="size-3" aria-hidden="true" />
-            pinned
+    <div className="group px-3 py-2 hover:bg-surface-2">
+      <div className="flex items-baseline gap-2.5">
+        {isNext && (
+          <span
+            className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.08em] text-accent"
+            title="The next thing to pick up"
+          >
+            Next
           </span>
         )}
-      </div>
-
-      <p className="mt-0.5 text-[12px] text-muted">
-        {priority.project}
-        {due && ` · ${due}`}
-        {priority.estimateMinutes ? ` · ~${priority.estimateMinutes} min` : ""}
-      </p>
-
-      {/* One sentence on why. The full breakdown is behind "Why this?" — an
-          explanation nobody asked for is noise. */}
-      <p className="mt-2 text-[13px] leading-relaxed text-muted">{priority.why}</p>
-
-      {priority.nextAction && (
-        <p className="mt-2 border-l-2 border-border pl-2.5 text-[13px] text-text">
-          {priority.nextAction}
+        <h3 className="min-w-0 truncate text-[14px] font-medium text-text">
+          {priority.title}
+        </h3>
+        <p className="min-w-0 flex-1 truncate text-[12px] text-muted">
+          {priority.project}
+          {due && ` · ${due}`}
+          {priority.estimateMinutes ? ` · ~${priority.estimateMinutes} min` : ""}
         </p>
-      )}
 
-      {priority.blocked && priority.waitingFor && (
-        <p className="mt-2 text-[12px] text-muted">
-          Blocked — waiting on {priority.waitingFor}.
-        </p>
-      )}
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          variant="accent"
-          onClick={() => void act(() => briefApi.complete(priority.taskId))}
-          disabled={busy}
-        >
-          <Check className="size-3.5" aria-hidden="true" /> Done
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => void act(() => briefApi.defer(priority.taskId))}
-          disabled={busy}
-        >
-          <SkipForward className="size-3.5" aria-hidden="true" /> Not today
-        </Button>
-        {!priority.pinned && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => void act(() => briefApi.pin(priority.taskId))}
+        <div className="flex shrink-0 items-center gap-0.5">
+          {priority.pinned && (
+            <Pin className="mr-1 size-3 text-muted" aria-label="Pinned" />
+          )}
+          <RowAction
+            label="Done"
+            onClick={() => void act(() => briefApi.complete(priority.taskId))}
             disabled={busy}
           >
-            <Pin className="size-3.5" aria-hidden="true" /> Pin
-          </Button>
-        )}
-        <button
-          type="button"
-          onClick={() => {
-            if (!showEvidence) void briefApi.event("evidence_opened", priority.taskId);
-            setShowEvidence((v) => !v);
-          }}
-          aria-expanded={showEvidence}
-          className="ml-auto inline-flex items-center gap-1 text-[12px] font-medium text-muted hover:text-text"
-        >
-          Why this?
-          <ChevronDown
-            className={`size-3.5 transition-transform ${showEvidence ? "rotate-180" : ""}`}
-            aria-hidden="true"
-          />
-        </button>
+            <Check className="size-3.5" aria-hidden="true" />
+          </RowAction>
+          <RowAction
+            label="Not today"
+            onClick={() => void act(() => briefApi.defer(priority.taskId))}
+            disabled={busy}
+          >
+            <SkipForward className="size-3.5" aria-hidden="true" />
+          </RowAction>
+          {!priority.pinned && (
+            <RowAction
+              label="Pin"
+              onClick={() => void act(() => briefApi.pin(priority.taskId))}
+              disabled={busy}
+            >
+              <Pin className="size-3.5" aria-hidden="true" />
+            </RowAction>
+          )}
+          <RowAction
+            label="Why this?"
+            expanded={showEvidence}
+            onClick={() => {
+              if (!showEvidence) void briefApi.event("evidence_opened", priority.taskId);
+              setShowEvidence((v) => !v);
+            }}
+          >
+            <ChevronDown
+              className={`size-3.5 transition-transform ${showEvidence ? "rotate-180" : ""}`}
+              aria-hidden="true"
+            />
+          </RowAction>
+        </div>
       </div>
 
+      {(showWhy || priority.nextAction || (priority.blocked && priority.waitingFor)) && (
+        <p className="mt-0.5 truncate text-[12px] text-muted">
+          {priority.nextAction || (showWhy ? priority.why : "")}
+          {priority.blocked && priority.waitingFor && ` · waiting on ${priority.waitingFor}`}
+        </p>
+      )}
+
       {showEvidence && (
-        <div className="mt-3 border-t border-border pt-3">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+        <div className="mt-2 border-t border-border pt-2">
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
             {priority.selectedBy === "you" ? "You chose this" : "How ORION scored it"}
           </p>
-          <ul className="space-y-1">
+          <ul className="space-y-0.5">
             {priority.components.map((component) => (
               <li key={component.key} className="flex items-baseline gap-2 text-[12px]">
                 <span
-                  className={`tnum w-11 shrink-0 text-right font-medium ${
+                  className={`tnum w-10 shrink-0 text-right font-medium ${
                     component.points >= 0 ? "text-text" : "text-muted"
                   }`}
                 >
@@ -287,13 +297,42 @@ function PriorityCard({
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[11px] leading-relaxed text-faint">
+          <p className="mt-1.5 text-[11px] leading-relaxed text-faint">
             Total {priority.score}. The score ranks suggestions against each
             other — it is not a judgement about the task.
           </p>
         </div>
       )}
-    </Card>
+    </div>
+  );
+}
+
+/** A compact icon control. The label is the accessible name and the tooltip. */
+function RowAction({
+  label,
+  children,
+  onClick,
+  disabled,
+  expanded,
+}: {
+  label: string;
+  children: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  expanded?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      aria-expanded={expanded}
+      className="inline-flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface hover:text-text focus-visible:outline-2 disabled:opacity-40"
+    >
+      {children}
+    </button>
   );
 }
 

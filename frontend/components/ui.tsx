@@ -97,9 +97,9 @@ const btnVariant = {
   subtle: "text-muted hover:text-text hover:bg-surface-2",
 } as const;
 const btnSize = {
-  sm: "h-8 px-3",
-  md: "h-9 px-4",
-  lg: "h-11 px-5 text-[14px]",
+  sm: "h-7 px-2.5",
+  md: "h-8 px-3",
+  lg: "h-10 px-4 text-[14px]",
 } as const;
 
 export function Button({

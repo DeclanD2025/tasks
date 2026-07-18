@@ -169,7 +169,6 @@ def _focus(chosen: list[prio.ScoredTask], review: dict, daypart: str,
         return "Nothing is scheduled. A good window to pick one thing and finish it."
 
     projects = {p.as_dict()["project"] for p in chosen}
-    stale_tasks = not quality["tasks"].usable
 
     if daypart == "night":
         return "Too late to start anything substantial. Note tomorrow's first move and stop."
@@ -184,8 +183,10 @@ def _focus(chosen: list[prio.ScoredTask], review: dict, daypart: str,
             else f"Clear {len(chosen)} commitments, then switch off."
         )
 
-    if stale_tasks:
-        base += " (Task list is out of date — some of this may already be done.)"
+    # Staleness is deliberately *not* repeated here. The data-quality line below
+    # already names the source and the date it went cold; saying it again as a
+    # parenthetical put the same caveat on screen twice, three lines apart, and
+    # pushed this sentence onto a second line to do it.
     return base
 
 

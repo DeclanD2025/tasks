@@ -285,20 +285,23 @@ export function Page({
   bare?: boolean;
 }) {
   return (
-    <div className="mx-auto w-full max-w-[1400px] px-4 py-5 lg:px-6 lg:py-6">
+    // Density is a global property, so it lives here rather than being retuned
+    // per page. Page headings sat at 28px above content set at 13–14px, which
+    // spent the top of every screen on a word the sidebar already highlights.
+    <div className="mx-auto w-full max-w-[1400px] px-4 py-4 lg:px-6">
       {!bare && (
-      <div className="mb-4">
+      <div className="mb-3">
         {eyebrow && <p className="text-[12px] font-medium text-muted">{eyebrow}</p>}
-        <h1 className="text-2xl font-semibold tracking-tight text-text lg:text-[28px]">{title}</h1>
+        <h1 className="text-[19px] font-semibold tracking-tight text-text lg:text-[21px]">{title}</h1>
       </div>
       )}
       {rail ? (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_var(--rail-w)]">
-          <div className="min-w-0 space-y-5">{children}</div>
-          <aside className="space-y-4 xl:sticky xl:top-[4.5rem] xl:h-fit">{rail}</aside>
+        <div className="grid gap-x-8 gap-y-4 xl:grid-cols-[minmax(0,1fr)_var(--rail-w)]">
+          <div className="min-w-0 space-y-4">{children}</div>
+          <aside className="space-y-3 xl:sticky xl:top-[4.5rem] xl:h-fit">{rail}</aside>
         </div>
       ) : (
-        <div className="space-y-5">{children}</div>
+        <div className="space-y-4">{children}</div>
       )}
     </div>
   );
