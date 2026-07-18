@@ -3,6 +3,7 @@
 from app.web.routes import (
     api,
     api_v2,
+    api_v2_brief,
     api_v2_strength,
     calendar_orbit,
     data,
@@ -33,5 +34,6 @@ ALL_ROUTERS = [
     settings.router,
     api.router,
     api_v2.router,
+    api_v2_brief.router,
     api_v2_strength.router,
 ]

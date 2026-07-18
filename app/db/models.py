@@ -1398,6 +1398,115 @@ class Task(Base):
     synced_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
+    # --- Local review state ------------------------------------------------ #
+    # These are ORION's own, deliberately outside the Supabase mirror: the
+    # companion app has no column for them, so they must never be pushed or
+    # they will be dropped on the next round trip. They exist because a backlog
+    # of 288 with 193 undated is not a to-do list, it is an inbox — and an
+    # inbox needs triage state.
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    #: unreviewed | keep | stale | needs_date | needs_project | convert_to_habit
+    review_status: Mapped[str] = mapped_column(String(24), default="unreviewed")
+    #: Hidden until this date. Distinct from a due date — deferring is a
+    #: decision the operator made, not a deadline they missed.
+    defer_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    blocked: Mapped[bool] = mapped_column(default=False)
+    waiting_for: Mapped[str] = mapped_column(String(200), default="")
+    #: The concrete first step. A task without one is a wish, and ranking it
+    #: highly wastes the slot — so the scorer penalises its absence.
+    next_action: Mapped[str] = mapped_column(String(400), default="")
+    estimate_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    energy: Mapped[str] = mapped_column(String(12), default="")  # low|medium|high
+    impact: Mapped[str] = mapped_column(String(12), default="")  # low|medium|high
+    #: Operator pinned it to today. Always outranks the scorer.
+    pinned_for: Mapped[date | None] = mapped_column(Date, nullable=True)
+    #: Kept rather than deleted — an abandoned task still explains a gap.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    archived_reason: Mapped[str] = mapped_column(String(200), default="")
+    #: How many times this task has been offered as a priority and passed over.
+    #: Repeated deferral is a signal the task is wrong, not that the day was.
+    deferral_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class DailyBrief(Base):
+    """One day's generated briefing, kept permanently.
+
+    Persisted rather than computed on the fly for one reason that matters more
+    than performance: **ORION should be answerable for its own advice.** Without
+    a stored record of what it recommended and what the operator did about it,
+    "are these suggestions any good?" is unanswerable forever. The snapshot is
+    the only way that question stays open.
+
+    ``rule_version`` makes the archive comparable across changes to the scoring
+    logic — a brief generated under v1 rules is not evidence about v3.
+    """
+
+    __tablename__ = "daily_briefs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    daypart: Mapped[str] = mapped_column(String(12), default="morning")
+
+    #: Deterministic prose assembled from structured facts. No model generates
+    #: this; every clause traces to a value in `evidence`.
+    state_summary: Mapped[str] = mapped_column(Text, default="")
+    focus: Mapped[str] = mapped_column(Text, default="")
+    next_action: Mapped[str] = mapped_column(Text, default="")
+
+    #: [{taskId, title, area, why, score, components, ...}]
+    priorities: Mapped[list] = mapped_column(JSON, default=list)
+    insight: Mapped[dict] = mapped_column(JSON, default=dict)
+    #: Everything the prose leaned on, so "why does it say that?" is answerable.
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict)
+    data_quality: Mapped[list] = mapped_column(JSON, default=list)
+    confidence: Mapped[str] = mapped_column(String(12), default="medium")
+
+    #: Timestamp of the newest source record the brief was built from — not the
+    #: generation time. A brief regenerated at noon from morning data is only
+    #: as current as the data.
+    source_data_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    rule_version: Mapped[str] = mapped_column(String(16), default="1")
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    #: Operator overrides, merged over the generated content on read.
+    manual_edits: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "day", name="uq_daily_brief_day"),
+    )
+
+
+class BriefEvent(Base):
+    """What ORION suggested and what the operator did about it.
+
+    The analytics the brief exists to enable are all questions about this table:
+    which suggestions get accepted, which get replaced, what gets deferred
+    repeatedly, whether showing three priorities beats showing one. None of
+    that is answerable from the briefs alone — only from the responses.
+    """
+
+    __tablename__ = "brief_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    brief_id: Mapped[int | None] = mapped_column(
+        ForeignKey("daily_briefs.id"), nullable=True, index=True
+    )
+    #: priority_generated | priority_accepted | priority_replaced |
+    #: priority_deferred | priority_pinned | task_completed |
+    #: insight_viewed | insight_dismissed | evidence_opened | brief_edited
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
+    subject: Mapped[str] = mapped_column(String(200), default="")
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    daypart: Mapped[str] = mapped_column(String(12), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_brief_event_lookup", "user_id", "kind", "created_at"),
+    )
+
 
 class CaptureInboxItem(Base):
     """A mobile/desktop quick-capture item waiting to be triaged."""

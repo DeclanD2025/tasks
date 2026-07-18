@@ -168,6 +168,15 @@ def _ensure_additive_columns(engine: Engine) -> None:
         for name, ddl in career_profile_columns.items():
             if name not in cols:
                 statements.append(f"ALTER TABLE career_profiles ADD COLUMN {name} {ddl}")
+    # Homepage briefing. Task review state lives on the existing `tasks` table,
+    # which predates it, so every column needs listing here — same trap as the
+    # strength columns below.
+    if "tasks" in tables:
+        cols = {col["name"] for col in inspector.get_columns("tasks")}
+        for name, ddl in _TASK_REVIEW_COLUMNS.items():
+            if name not in cols:
+                statements.append(f"ALTER TABLE tasks ADD COLUMN {name} {ddl}")
+
     # Strength training. `create_all` builds the new tables (programmes, days,
     # items, planned sessions, progression events) but cannot widen the ones
     # that already exist, so every column added to a pre-existing strength
@@ -194,6 +203,24 @@ def _ensure_additive_columns(engine: Engine) -> None:
 # SQLite's ALTER TABLE ADD COLUMN cannot add a UNIQUE column and cannot take a
 # non-constant default, so uniqueness is applied afterwards as an index and
 # JSON columns default to their empty literal.
+#: ORION-local triage state on the mirrored Supabase tasks table. Never pushed
+#: upstream — the companion app has no columns for these.
+_TASK_REVIEW_COLUMNS: dict[str, str] = {
+    "reviewed_at": "DATETIME",
+    "review_status": "VARCHAR(24) NOT NULL DEFAULT 'unreviewed'",
+    "defer_until": "DATE",
+    "blocked": "BOOLEAN NOT NULL DEFAULT 0",
+    "waiting_for": "VARCHAR(200) NOT NULL DEFAULT ''",
+    "next_action": "VARCHAR(400) NOT NULL DEFAULT ''",
+    "estimate_minutes": "INTEGER",
+    "energy": "VARCHAR(12) NOT NULL DEFAULT ''",
+    "impact": "VARCHAR(12) NOT NULL DEFAULT ''",
+    "pinned_for": "DATE",
+    "archived_at": "DATETIME",
+    "archived_reason": "VARCHAR(200) NOT NULL DEFAULT ''",
+    "deferral_count": "INTEGER NOT NULL DEFAULT 0",
+}
+
 _STRENGTH_COLUMNS: dict[str, dict[str, str]] = {
     "strength_exercises": {
         "display_name": "VARCHAR(160) NOT NULL DEFAULT ''",

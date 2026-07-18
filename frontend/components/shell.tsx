@@ -273,18 +273,25 @@ export function Page({
   eyebrow,
   children,
   rail,
+  bare = false,
 }: {
   title: string;
   eyebrow?: string;
   children: ReactNode;
   rail?: ReactNode;
+  /** Skip the standard page header. For screens whose own first element is
+   *  the heading — the homepage brief is the h1, and a "Today" title above it
+   *  would be a label on a sentence that already says what day it is. */
+  bare?: boolean;
 }) {
   return (
     <div className="mx-auto w-full max-w-[1400px] px-4 py-5 lg:px-6 lg:py-6">
+      {!bare && (
       <div className="mb-4">
         {eyebrow && <p className="text-[12px] font-medium text-muted">{eyebrow}</p>}
         <h1 className="text-2xl font-semibold tracking-tight text-text lg:text-[28px]">{title}</h1>
       </div>
+      )}
       {rail ? (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_var(--rail-w)]">
           <div className="min-w-0 space-y-5">{children}</div>

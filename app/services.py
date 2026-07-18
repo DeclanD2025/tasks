@@ -422,7 +422,26 @@ def get_tasks(user_id: int, *, include_done: bool = True) -> list[dict]:
                 "due_date": r.due_date,
                 "recurrence": r.recurrence,
                 "completed_at": r.completed_at,
+                "created_at": r.created_at,
+                "remote_created_at": r.remote_created_at,
                 "dirty": bool(r.dirty),
+                # ORION-local review state. Included because the priority
+                # scorer reads these — omitting them made pinning, deferring
+                # and next actions silently do nothing, since the scorer only
+                # ever saw the keys this dict chose to expose.
+                "reviewed_at": r.reviewed_at,
+                "review_status": r.review_status,
+                "defer_until": r.defer_until,
+                "blocked": bool(r.blocked),
+                "waiting_for": r.waiting_for,
+                "next_action": r.next_action,
+                "estimate_minutes": r.estimate_minutes,
+                "energy": r.energy,
+                "impact": r.impact,
+                "pinned_for": r.pinned_for,
+                "archived_at": r.archived_at,
+                "archived_reason": r.archived_reason,
+                "deferral_count": r.deferral_count,
             }
             for r in rows
         ]

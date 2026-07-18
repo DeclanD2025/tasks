@@ -1,267 +1,504 @@
 "use client";
 
-import { ArrowRight } from "lucide-react";
-import Link from "next/link";
-import { RecommendationCard } from "@/components/interactive";
-import { Loaded } from "@/components/loading";
-import { ChangeList, EmptyState, TimelineList } from "@/components/patterns";
-import { Card, DomainDot, Meta, SectionHeader } from "@/components/ui";
-import { useApi } from "@/lib/api";
-import { cn } from "@/lib/cn";
-import { domainStyle } from "@/lib/domains";
-import type { TodayPayload } from "@/lib/payloads";
-import type { StatusMetric } from "@/lib/types";
-
-const syncTone = {
-  ok: "text-good",
-  stale: "text-warn",
-  error: "text-warn",
-  disconnected: "text-faint",
-  mock: "text-info",
-} as const;
-
-function daypart(hour: number): string {
-  if (hour < 5) return "night";
-  if (hour < 12) return "morning";
-  if (hour < 17) return "afternoon";
-  if (hour < 22) return "evening";
-  return "night";
-}
-
-/** What the commitments block is called depends on how much day is left.
- *  In the morning it frames the day ahead; by evening it is what is still
- *  outstanding, which is a different question. */
-function demandsHeading(part: string): { title: string; sub: string } {
-  if (part === "morning") return { title: "On you today", sub: "What the day is asking for" };
-  if (part === "afternoon") return { title: "Still on you", sub: "What is left of the day" };
-  return { title: "Left undone", sub: "What did not get closed today" };
-}
-
-export default function TodayPage() {
-  // One request: the backend bundles the next run and the sync list into
-  // /today because rebuilding those read models separately is expensive.
-  const state = useApi<TodayPayload>("/today");
-  return <Loaded state={state}>{(data) => <Today data={data} />}</Loaded>;
-}
-
-function Today({ data }: { data: TodayPayload }) {
-  const now = new Date();
-  const part = daypart(now.getHours());
-  const dateLine = now.toLocaleDateString("en-GB", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
-  const { nextRun, lede, tasks } = data;
-  const heading = demandsHeading(part);
-
-  return (
-    <div className="mx-auto w-full max-w-[1400px] px-4 py-5 lg:px-6 lg:py-6">
-      {/* ---------------------------------------------------------- Lede.
-          The page's one bold move: today's read, stated rather than
-          assembled by the reader from four numbers. Everything below it is
-          deliberately quieter. */}
-      <header className="mb-6 max-w-[62ch]">
-        <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-faint">
-          {dateLine} · {part}
-          {data.freshness && <> · {data.freshness.toLowerCase()}</>}
-        </p>
-        <p className="mt-2.5 text-balance text-[21px] font-semibold leading-[1.35] tracking-tight text-text lg:text-[26px]">
-          {lede.state || `Good ${part === "night" ? "evening" : part}${data.user.name ? `, ${data.user.name}` : ""}.`}
-          {lede.demand && <span className="text-muted"> {lede.demand}</span>}
-        </p>
-        {lede.nudge && (
-          <p className="mt-1.5 text-[13.5px] text-muted">{lede.nudge}</p>
-        )}
-      </header>
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_var(--rail-w)] xl:items-start">
-        <div className="min-w-0 space-y-5">
-          {data.recommendation ? (
-            <RecommendationCard rec={data.recommendation} />
-          ) : (
-            <Card className="p-4 sm:p-5">
-              <EmptyState
-                title="No call for today"
-                body="ORION makes one recommendation when recovery and training data give it enough to go on."
-                cta="Import data"
-                href="/data"
-              />
-            </Card>
-          )}
-
-          {/* Demoted from four hero tiles to one compact band: the numbers are
-              context for the lede, not the headline. */}
-          {data.statusStrip.length > 0 && <MetricBand items={data.statusStrip} />}
-
-          {/* What is actually owed. The backlog count was the single largest
-              fact about the day and appeared nowhere on this page. */}
-          {(tasks.overdue > 0 || tasks.dueToday > 0) && (
-            <Card className="p-4 sm:p-5">
-              <SectionHeader
-                title={heading.title}
-                sub={heading.sub}
-                action={
-                  <Link href="/tasks" className="text-[12px] font-medium text-muted hover:text-text">
-                    All tasks →
-                  </Link>
-                }
-              />
-              <div className="mb-3 flex flex-wrap items-baseline gap-x-5 gap-y-1">
-                {tasks.dueToday > 0 && (
-                  <Count value={tasks.dueToday} label="due today" tone="text-text" />
-                )}
-                {tasks.overdue > 0 && (
-                  <Count value={tasks.overdue} label="past due" tone="text-warn" />
-                )}
-                <Count value={tasks.open} label="open" tone="text-faint" />
-              </div>
-              <ul className="space-y-1.5 border-t border-border pt-3">
-                {tasks.soonest.map((t) => (
-                  <li key={t.id} className="flex items-baseline justify-between gap-3 text-[13.5px]">
-                    <span className="min-w-0 truncate text-text">{t.title}</span>
-                    <Meta className={cn("shrink-0", t.overdue && "text-warn")}>{t.dueLabel}</Meta>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          )}
-
-          <Card className="p-4 sm:p-5">
-            <SectionHeader
-              title="Today"
-              sub="Scheduled and completed, in order"
-              action={<Link href="/plan" className="text-[12px] font-medium text-muted hover:text-text">Week →</Link>}
-            />
-            {data.timeline.length ? (
-              <TimelineList entries={data.timeline} />
-            ) : (
-              <EmptyState title="Nothing scheduled" body="Connect a calendar, or plan the week from the Plan tab." cta="Plan" href="/plan" />
-            )}
-          </Card>
-
-          {nextRun && (
-            <Card className="p-4 sm:p-5">
-              <div className="flex items-start justify-between gap-4" style={domainStyle("running")}>
-                <div className="min-w-0">
-                  <div className="mb-1 flex items-center gap-1.5">
-                    <DomainDot domain="running" />
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                      Next run · {nextRun.dayLabel}
-                    </span>
-                  </div>
-                  <h3 className="text-[15px] font-semibold text-text">{nextRun.title}</h3>
-                  <p className="mt-0.5 text-[13px] text-muted">{nextRun.detail}</p>
-                  <Meta className="mt-1 block">
-                    {nextRun.distanceKm.toFixed(1)} km · {nextRun.phase}
-                  </Meta>
-                </div>
-                <Link href="/training" className="shrink-0 rounded-lg px-3 py-2 text-[13px] font-medium text-white" style={{ background: "var(--running)" }}>
-                  Open
-                </Link>
-              </div>
-            </Card>
-          )}
-        </div>
-
-        {/* Right rail */}
-        <aside className="space-y-4">
-          <Card className="p-4">
-            <SectionHeader title="What changed" sub="Against your 7-day baseline" />
-            {data.changes.length ? (
-              <ChangeList changes={data.changes} />
-            ) : (
-              <EmptyState title="No drift" body="Nothing has moved off its baseline." />
-            )}
-            <Link href="/insights" className="mt-3 inline-flex items-center gap-1 text-[12px] font-medium text-muted hover:text-text">
-              All insights <ArrowRight className="size-3.5" />
-            </Link>
-          </Card>
-
-          {data.sleepDebtLabel && (
-            <Card className="p-4">
-              <SectionHeader title="Sleep debt" />
-              <p className="text-[15px] font-semibold text-text">{data.sleepDebtLabel}</p>
-              <Link href="/insights/metric/sleep_debt" className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-muted hover:text-text">
-                How this is worked out <ArrowRight className="size-3.5" />
-              </Link>
-            </Card>
-          )}
-
-          <Card className="p-4">
-            <SectionHeader title="Data sync" action={<Link href="/data" className="text-[12px] font-medium text-muted hover:text-text">Manage</Link>} />
-            {data.syncSources.length ? (
-              <ul className="space-y-1.5">
-                {data.syncSources.map((s) => (
-                  <li key={s.name} className="flex items-center justify-between gap-2 text-[12.5px]">
-                    <span className="flex min-w-0 items-center gap-1.5 text-muted">
-                      <span aria-hidden className={`size-1.5 shrink-0 rounded-full bg-current ${syncTone[s.status]}`} />
-                      <span className="truncate">{s.name}</span>
-                    </span>
-                    <Meta>{s.status === "disconnected" ? "connect" : s.status === "mock" ? "sample" : s.freshness}</Meta>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <EmptyState title="No sources" body="Nothing is connected yet." cta="Connect" href="/data" />
-            )}
-          </Card>
-        </aside>
-      </div>
-    </div>
-  );
-}
-
-/* ----------------------------------------------------------------- Count */
-function Count({ value, label, tone }: { value: number; label: string; tone: string }) {
-  return (
-    <span className="flex items-baseline gap-1.5">
-      <span className={cn("tnum text-xl font-semibold", tone)}>{value}</span>
-      <span className="text-[12.5px] text-muted">{label}</span>
-    </span>
-  );
-}
-
-/* ------------------------------------------------------------ MetricBand */
-/** The four metrics as one quiet band rather than four competing tiles.
+/**
+ * The homepage — a daily brief, not a dashboard.
  *
- *  A stale reading is shown with its age and muted instead of being presented
- *  as current state — mood stopped arriving weeks ago and was still sitting in
- *  the hero row as if it were today's check-in.
+ * It answers three questions in order, and the order is the design: how am I
+ * doing, what matters today, what do I do next. Everything else sits below or
+ * behind progressive disclosure.
+ *
+ * What this page deliberately does not do:
+ *
+ * - **No "95 tasks past due" as the opening statement.** The audit found 90 of
+ *   those 95 belong to one project. "One publication's schedule slipped" is the
+ *   same fact without the accusation, and it is the one a person can act on.
+ * - **No sync-status card.** Plumbing appears only when it changes what ORION
+ *   can conclude — one line, in the flow of the sentence it qualifies, never a
+ *   permanent grid of green ticks.
+ * - **No grid of interchangeable cards.** Hierarchy comes from type size and
+ *   spacing: the brief is large and unboxed, priorities are cards because they
+ *   are actionable, and everything below is quieter than both.
+ * - **No number ORION cannot stand behind.** When a source is stale the page
+ *   says so beside the claim, not in grey underneath it.
+ *
+ * Mobile is not the desktop stack. The brief and priorities come first at full
+ * width; the timeline, review and insight follow in that order, because the
+ * question "what do I do next" survives a small screen and a metric grid does
+ * not.
  */
-function MetricBand({ items }: { items: StatusMetric[] }) {
+
+import {
+  Check, ChevronDown, ChevronRight, Clock, Info, Pin, SkipForward,
+} from "lucide-react";
+import Link from "next/link";
+import { useCallback, useState } from "react";
+import { Loaded } from "@/components/loading";
+import { Page } from "@/components/shell";
+import { Button, Card, Meta } from "@/components/ui";
+import { getJson, useApi } from "@/lib/api";
+import { domainStyle } from "@/lib/domains";
+import {
+  type Brief,
+  type Priority,
+  briefApi,
+  dayHeading,
+  dueLabel,
+} from "@/lib/brief";
+
+export default function HomePage() {
+  const state = useApi<Brief>("/brief");
+  return <Loaded state={state}>{(data) => <Home initial={data} />}</Loaded>;
+}
+
+function Home({ initial }: { initial: Brief }) {
+  const [brief, setBrief] = useState<Brief>(initial);
+
+  const refresh = useCallback(() => {
+    void getJson<Brief>("/brief").then(setBrief).catch(() => undefined);
+  }, []);
+
   return (
-    <Card className="divide-y divide-border p-0 sm:grid sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4">
-      {items.map((m, i) => (
-        <Link
-          key={m.kind}
-          href={`/insights/metric/${m.kind}`}
-          style={domainStyle(m.domain)}
-          className={cn(
-            "group flex items-center justify-between gap-3 p-3.5 transition-colors hover:bg-surface-2 sm:block",
-            i > 0 && "sm:border-l sm:border-border",
-          )}
+    <Page title="" bare>
+      <Orientation brief={brief} />
+
+      {brief.priorities.length > 0 && (
+        <Priorities brief={brief} onChange={setBrief} onRefresh={refresh} />
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-[1.45fr_1fr]">
+        <div className="space-y-6">
+          <Flow brief={brief} />
+          <Review brief={brief} />
+        </div>
+        <div className="space-y-6">
+          {"title" in brief.insight && <Insight brief={brief} />}
+          <Progress />
+        </div>
+      </div>
+
+      <Provenance brief={brief} />
+    </Page>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// 1. Daily orientation
+// --------------------------------------------------------------------------- //
+/**
+ * The first screen. Unboxed and set large on purpose: this is the one thing
+ * that should be readable at a glance, and putting it in a card would make it
+ * a peer of everything below it.
+ */
+function Orientation({ brief }: { brief: Brief }) {
+  const blocking = brief.dataQuality.filter((w) => w.severity === "warning");
+
+  return (
+    <header className="pt-1">
+      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">
+        {dayHeading(brief.day, brief.daypart)}
+      </p>
+
+      <h1 className="mt-2 max-w-[34ch] text-[26px] font-semibold leading-[1.25] tracking-tight text-text lg:text-[32px]">
+        {brief.stateSummary}
+      </h1>
+
+      {brief.focus && (
+        <p className="mt-3 max-w-[52ch] text-[16px] leading-relaxed text-muted lg:text-[17px]">
+          {brief.focus}
+        </p>
+      )}
+
+      {brief.nextAction && (
+        <div className="mt-5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+            Next
+          </span>
+          <span className="text-[17px] font-medium text-text">{brief.nextAction}</span>
+        </div>
+      )}
+
+      {blocking.length > 0 && (
+        <p className="mt-4 max-w-[62ch] border-l-2 border-border-strong pl-3 text-[13px] leading-relaxed text-muted">
+          {blocking.map((w) => w.message).join(" ")}
+        </p>
+      )}
+    </header>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// 2. Priorities — never more than three
+// --------------------------------------------------------------------------- //
+function Priorities({
+  brief,
+  onChange,
+  onRefresh,
+}: {
+  brief: Brief;
+  onChange: (b: Brief) => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <section aria-labelledby="priorities-heading" className="space-y-2.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2
+          id="priorities-heading"
+          className="text-[13px] font-semibold uppercase tracking-wide text-muted"
         >
-          <span className="flex items-center gap-1.5">
-            <DomainDot domain={m.domain} />
-            <span className="text-[12px] font-medium text-muted">{m.label}</span>
-          </span>
-          <span className="flex items-baseline gap-1 sm:mt-1.5">
-            <span
-              className={cn(
-                "tnum text-[19px] font-semibold",
-                m.stale ? "text-faint" : "text-text",
-              )}
-            >
-              {m.value}
-            </span>
-            {m.unit && <span className="text-[12px] text-faint">{m.unit}</span>}
-          </span>
-          <Meta className="hidden sm:mt-0.5 sm:block">
-            {m.stale ? `last read ${m.ageLabel}` : m.deltaText}
-          </Meta>
+          Worth finishing
+        </h2>
+        <Link href="/tasks" className="text-[12px] font-medium text-muted hover:text-text">
+          All tasks →
         </Link>
+      </div>
+
+      {brief.priorities.map((priority) => (
+        <PriorityCard
+          key={priority.taskId}
+          priority={priority}
+          onChange={onChange}
+          onRefresh={onRefresh}
+        />
       ))}
+    </section>
+  );
+}
+
+function PriorityCard({
+  priority,
+  onChange,
+  onRefresh,
+}: {
+  priority: Priority;
+  onChange: (b: Brief) => void;
+  onRefresh: () => void;
+}) {
+  const [showEvidence, setShowEvidence] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const act = async (fn: () => Promise<Brief>) => {
+    setBusy(true);
+    try {
+      onChange(await fn());
+    } catch {
+      onRefresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const due = dueLabel(priority.dueDate);
+
+  return (
+    <Card className="p-4">
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        <h3 className="text-[16px] font-medium leading-snug text-text">{priority.title}</h3>
+        {priority.pinned && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted">
+            <Pin className="size-3" aria-hidden="true" />
+            pinned
+          </span>
+        )}
+      </div>
+
+      <p className="mt-0.5 text-[12px] text-muted">
+        {priority.project}
+        {due && ` · ${due}`}
+        {priority.estimateMinutes ? ` · ~${priority.estimateMinutes} min` : ""}
+      </p>
+
+      {/* One sentence on why. The full breakdown is behind "Why this?" — an
+          explanation nobody asked for is noise. */}
+      <p className="mt-2 text-[13px] leading-relaxed text-muted">{priority.why}</p>
+
+      {priority.nextAction && (
+        <p className="mt-2 border-l-2 border-border pl-2.5 text-[13px] text-text">
+          {priority.nextAction}
+        </p>
+      )}
+
+      {priority.blocked && priority.waitingFor && (
+        <p className="mt-2 text-[12px] text-muted">
+          Blocked — waiting on {priority.waitingFor}.
+        </p>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant="accent"
+          onClick={() => void act(() => briefApi.complete(priority.taskId))}
+          disabled={busy}
+        >
+          <Check className="size-3.5" aria-hidden="true" /> Done
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void act(() => briefApi.defer(priority.taskId))}
+          disabled={busy}
+        >
+          <SkipForward className="size-3.5" aria-hidden="true" /> Not today
+        </Button>
+        {!priority.pinned && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void act(() => briefApi.pin(priority.taskId))}
+            disabled={busy}
+          >
+            <Pin className="size-3.5" aria-hidden="true" /> Pin
+          </Button>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            if (!showEvidence) void briefApi.event("evidence_opened", priority.taskId);
+            setShowEvidence((v) => !v);
+          }}
+          aria-expanded={showEvidence}
+          className="ml-auto inline-flex items-center gap-1 text-[12px] font-medium text-muted hover:text-text"
+        >
+          Why this?
+          <ChevronDown
+            className={`size-3.5 transition-transform ${showEvidence ? "rotate-180" : ""}`}
+            aria-hidden="true"
+          />
+        </button>
+      </div>
+
+      {showEvidence && (
+        <div className="mt-3 border-t border-border pt-3">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+            {priority.selectedBy === "you" ? "You chose this" : "How ORION scored it"}
+          </p>
+          <ul className="space-y-1">
+            {priority.components.map((component) => (
+              <li key={component.key} className="flex items-baseline gap-2 text-[12px]">
+                <span
+                  className={`tnum w-11 shrink-0 text-right font-medium ${
+                    component.points >= 0 ? "text-text" : "text-muted"
+                  }`}
+                >
+                  {component.points > 0 ? "+" : ""}
+                  {component.points}
+                </span>
+                <span className="text-muted">{component.detail}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11px] leading-relaxed text-faint">
+            Total {priority.score}. The score ranks suggestions against each
+            other — it is not a judgement about the task.
+          </p>
+        </div>
+      )}
     </Card>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// 3. Today's flow — open space stays open
+// --------------------------------------------------------------------------- //
+function Flow({ brief }: { brief: Brief }) {
+  const remaining = brief.timeline.filter((item) => !item.past);
+  const calendar = brief.sources.calendar;
+
+  return (
+    <section aria-labelledby="flow-heading">
+      <h2
+        id="flow-heading"
+        className="mb-2.5 text-[13px] font-semibold uppercase tracking-wide text-muted"
+      >
+        Rest of the day
+      </h2>
+      {calendar?.trust !== "live" ? (
+        <p className="text-[14px] leading-relaxed text-muted">
+          {calendar?.note || "No calendar data."}
+        </p>
+      ) : remaining.length === 0 ? (
+        <p className="text-[14px] leading-relaxed text-muted">
+          Nothing else scheduled. The time is genuinely open.
+        </p>
+      ) : (
+        <ul className="space-y-0">
+          {remaining.map((item, i) => (
+            <li
+              key={item.id}
+              className={`flex gap-3 py-2.5 ${i > 0 ? "border-t border-border" : ""}`}
+            >
+              <span className="tnum w-14 shrink-0 text-[13px] font-medium text-muted">
+                {item.allDay ? "all day" : item.time}
+              </span>
+              <div className="min-w-0">
+                <p className="text-[14px] text-text">{item.title}</p>
+                {item.detail && <Meta>{item.detail}</Meta>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// 4. One insight, or none
+// --------------------------------------------------------------------------- //
+function Insight({ brief }: { brief: Brief }) {
+  const insight = brief.insight as {
+    title: string;
+    body: string;
+    confidence: string;
+    evidence: Record<string, unknown>;
+  };
+  const [open, setOpen] = useState(false);
+
+  return (
+    <section aria-labelledby="insight-heading">
+      <h2
+        id="insight-heading"
+        className="mb-2.5 text-[13px] font-semibold uppercase tracking-wide text-muted"
+      >
+        Worth knowing
+      </h2>
+      <Card className="p-4" style={domainStyle("recovery")}>
+        <p className="text-[14px] leading-relaxed text-text">{insight.body}</p>
+        <button
+          type="button"
+          onClick={() => {
+            if (!open) void briefApi.event("insight_viewed", undefined, insight.title);
+            setOpen((v) => !v);
+          }}
+          aria-expanded={open}
+          className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-muted hover:text-text"
+        >
+          <Info className="size-3.5" aria-hidden="true" />
+          Evidence
+        </button>
+        {open && (
+          <dl className="mt-2 space-y-1 border-t border-border pt-2 text-[12px]">
+            {Object.entries(insight.evidence || {}).map(([key, value]) => (
+              <div key={key} className="flex justify-between gap-3">
+                <dt className="text-muted">{humanise(key)}</dt>
+                <dd className="tnum text-text">{String(value)}</dd>
+              </div>
+            ))}
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted">Confidence</dt>
+              <dd className="text-text">{insight.confidence}</dd>
+            </div>
+          </dl>
+        )}
+      </Card>
+    </section>
+  );
+}
+
+function humanise(key: string): string {
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (c) => c.toUpperCase())
+    .trim();
+}
+
+// --------------------------------------------------------------------------- //
+// 5. Review — what replaces the overdue counter
+// --------------------------------------------------------------------------- //
+function Review({ brief }: { brief: Brief }) {
+  const buckets = brief.review.buckets.filter((b) => b.count > 0);
+  if (buckets.length === 0) return null;
+
+  return (
+    <section aria-labelledby="review-heading">
+      <h2
+        id="review-heading"
+        className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-muted"
+      >
+        Needs a decision
+      </h2>
+      {/* The reframing, in prose, before any counts. */}
+      <p className="mb-3 max-w-[58ch] text-[14px] leading-relaxed text-text">
+        {brief.review.headline}
+      </p>
+      <ul className="space-y-1.5">
+        {buckets.map((bucket) => (
+          <li key={bucket.key} className="flex items-baseline gap-2.5">
+            <span className="tnum w-8 shrink-0 text-right text-[15px] font-semibold text-text">
+              {bucket.count}
+            </span>
+            <span className="shrink-0 text-[14px] text-text">{bucket.label}</span>
+            <span className="min-w-0 flex-1 truncate text-[12px] text-faint">
+              {bucket.note}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <Link
+        href="/tasks"
+        className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-muted hover:text-text"
+      >
+        Work through them
+        <ChevronRight className="size-3.5" aria-hidden="true" />
+      </Link>
+    </section>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// 6. Lately
+// --------------------------------------------------------------------------- //
+/**
+ * Reads from training, the only stream currently producing data — task
+ * completions stopped 14 days ago, so a progress section built on them would
+ * be permanently empty or quietly misleading.
+ */
+function Progress() {
+  const training = useApi<{ window: { sessions: number; volumeKg: number } }>(
+    "/strength/home",
+  );
+  const data = training.data;
+  if (!data || data.window.sessions === 0) return null;
+
+  return (
+    <section aria-labelledby="progress-heading">
+      <h2
+        id="progress-heading"
+        className="mb-2.5 text-[13px] font-semibold uppercase tracking-wide text-muted"
+      >
+        Lately
+      </h2>
+      <p className="text-[14px] leading-relaxed text-text">
+        {data.window.sessions} strength session
+        {data.window.sessions === 1 ? "" : "s"} in the last four weeks,{" "}
+        {Math.round(data.window.volumeKg).toLocaleString()} kg of working volume.
+      </p>
+      <Link
+        href="/training/strength"
+        className="mt-2 inline-flex items-center gap-1 text-[13px] font-medium text-muted hover:text-text"
+      >
+        Training
+        <ChevronRight className="size-3.5" aria-hidden="true" />
+      </Link>
+    </section>
+  );
+}
+
+// --------------------------------------------------------------------------- //
+// 7. Provenance — the quietest thing on the page
+// --------------------------------------------------------------------------- //
+function Provenance({ brief }: { brief: Brief }) {
+  return (
+    <footer className="border-t border-border pt-3">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-faint">
+        <Clock className="size-3" aria-hidden="true" />
+        <span>
+          Brief for {brief.day} ({brief.daypart}) · confidence {brief.confidence}
+        </span>
+        {brief.sourceDataAt && <span>· data to {brief.sourceDataAt.slice(0, 10)}</span>}
+        <span>· rules v{brief.ruleVersion}</span>
+        {brief.edited && <span>· edited by you</span>}
+      </p>
+    </footer>
   );
 }
