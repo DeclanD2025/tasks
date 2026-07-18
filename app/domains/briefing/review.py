@@ -75,8 +75,12 @@ def review_buckets(tasks: list[dict], *, today: date | None = None) -> dict:
     return {
         "total": len(open_tasks),
         "buckets": [
+            # Not the headline sentence — the page prints that directly above,
+            # so reusing it here just repeated itself and then ran out of room.
+            # Each note says what its bucket *is*; this one's job is to mark the
+            # boundary with "Probably dead" below.
             _bucket("overdue", "Past their date", overdue,
-                    _overdue_framing(overdue, dominant)),
+                    f"Dated within the last {_STALE_DAYS} days, and the date has gone."),
             _bucket("needs_date", "No date set", needs_date,
                     "Never scheduled, so they cannot come up on their own."),
             _bucket("habit_candidates", "Look like habits", habit_candidates,
