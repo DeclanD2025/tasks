@@ -58,6 +58,8 @@ export type SourceQuality = {
   count: number;
   trust: "live" | "stale" | "empty";
   note: string;
+  /** The same fact as a fragment, for listing several sources together. */
+  fact: string;
 };
 
 export type TimelineItem = {
@@ -86,7 +88,7 @@ export type Brief = {
   };
   timeline: TimelineItem[];
   evidence: Record<string, unknown>;
-  dataQuality: { domain: string; severity: string; message: string }[];
+  dataQuality: { domain: string; severity: string; message: string; fact: string }[];
   sources: Record<string, SourceQuality>;
   confidence: "high" | "medium" | "low";
   ruleVersion: string;

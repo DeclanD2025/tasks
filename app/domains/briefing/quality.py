@@ -52,7 +52,12 @@ class SourceQuality:
     count: int
     #: live | stale | empty
     trust: str
+    #: A complete sentence, for when this source is described on its own.
     note: str
+    #: The same thing as a fragment, for when several are listed together.
+    #: Two full sentences side by side repeated their shared consequence
+    #: clause — "…so anything below may have moved on" twice, on one line.
+    fact: str = ""
 
     def as_dict(self) -> dict:
         return {
@@ -63,6 +68,7 @@ class SourceQuality:
             "count": self.count,
             "trust": self.trust,
             "note": self.note,
+            "fact": self.fact,
         }
 
     @property
@@ -75,14 +81,17 @@ def _judge(domain: str, label: str, latest: date | None, count: int) -> SourceQu
         return SourceQuality(
             domain, label, None, None, count, "empty",
             f"No {label.lower()} data yet.",
+            f"no {label.lower()} data",
         )
     age = (date.today() - latest).days
     limit = FRESHNESS_LIMITS.get(domain, 7)
     if age > limit:
+        when = latest.strftime("%-d %b")
         return SourceQuality(
             domain, label, latest, age, count, "stale",
-            f"{label} last updated {age} days ago "
-            f"({latest.strftime('%-d %b')}), so anything below may have moved on.",
+            f"{label} last updated {age} days ago ({when}), "
+            "so anything below may have moved on.",
+            f"{label.lower()} {age}d old ({when})",
         )
     return SourceQuality(domain, label, latest, age, count, "live", "")
 
@@ -163,6 +172,7 @@ def warnings_from(quality: dict[str, SourceQuality]) -> list[dict]:
             "domain": source.domain,
             "severity": "warning" if source.trust == "stale" else "info",
             "message": source.note,
+            "fact": source.fact,
         })
     return out
 

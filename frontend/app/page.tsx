@@ -112,9 +112,13 @@ function Orientation({ brief }: { brief: Brief }) {
         {brief.stateSummary}
       </h1>
 
+      {/* Facts joined, consequence stated once. Two stale sources used to print
+          two full sentences that shared a trailing clause, so the page said
+          "…so anything below may have moved on" twice in a row. */}
       {blocking.length > 0 && (
-        <p className="mt-1.5 max-w-[80ch] text-[12px] leading-relaxed text-faint">
-          {blocking.map((w) => w.message).join(" ")}
+        <p className="mt-1 max-w-[80ch] text-[12px] leading-relaxed text-faint">
+          Working from {blocking.map((w) => w.fact || w.message).join(" and ")} — some
+          of this may already have moved on.
         </p>
       )}
     </header>
