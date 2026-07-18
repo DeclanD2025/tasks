@@ -68,14 +68,47 @@ _DAYPART_MINUTES = {"morning": 240, "afternoon": 200, "evening": 120, "night": 3
 # --------------------------------------------------------------------------- #
 # Composition
 # --------------------------------------------------------------------------- #
-def _state_summary(recovery, quality: dict, daypart: str) -> tuple[str, dict]:
+def _latest_health(uid: int) -> dict:
+    """Sleep and bodyweight from the newest health row.
+
+    Read directly rather than off ``RecoverySnapshot``, which carries a score
+    and a label but no sleep figure — a `getattr` against it silently returned
+    None and produced a summary with a hole in it.
+    """
+    from app.db.models import HealthMetricDaily
+
+    with session_scope() as s:
+        row = s.scalars(
+            select(HealthMetricDaily)
+            .where(HealthMetricDaily.user_id == uid)
+            .order_by(HealthMetricDaily.day.desc())
+            .limit(1)
+        ).first()
+        if row is None:
+            return {}
+        return {
+            "day": row.day,
+            "sleepHours": round(row.sleep_minutes / 60.0, 1) if row.sleep_minutes else None,
+            "restingHr": row.resting_hr,
+            "hrvMs": row.hrv_ms,
+        }
+
+
+def _state_summary(recovery, quality: dict, daypart: str,
+                   health_row: dict | None = None) -> tuple[str, dict]:
     """One or two sentences on how the operator is doing, and the evidence.
 
     Refuses to characterise recovery at all when health data is stale, rather
     than describing a state from numbers that may be days old.
+
+    Every clause is built only from a value that is actually present. An empty
+    slot drops its whole clause instead of rendering — "Recovery reads ." is
+    worse than saying nothing, because it looks like a bug the operator has to
+    interpret.
     """
     evidence: dict = {}
     health = quality["health"]
+    health_row = health_row or {}
 
     if not health.usable:
         return (
@@ -85,25 +118,34 @@ def _state_summary(recovery, quality: dict, daypart: str) -> tuple[str, dict]:
         )
 
     parts: list[str] = []
-    sleep = getattr(recovery, "sleep_hours", None)
+
+    sleep = health_row.get("sleepHours")
     if sleep:
         evidence["sleepHours"] = sleep
         if sleep >= 7.5:
-            parts.append(f"You slept {sleep:.1f} hours")
+            parts.append(f"You slept {sleep:g} hours")
         elif sleep >= 6.5:
-            parts.append(f"You slept {sleep:.1f} hours — adequate")
+            parts.append(f"You slept {sleep:g} hours")
         else:
-            parts.append(f"You slept {sleep:.1f} hours, which is short")
+            parts.append(f"You slept {sleep:g} hours, which is short")
 
     score = getattr(recovery, "score", None)
-    label = getattr(recovery, "score_label", "") or ""
-    if score is not None:
-        evidence["recoveryScore"] = score
+    label = (getattr(recovery, "label", "") or "").strip()
+    if score is not None and label:
+        evidence["recoveryScore"] = round(score, 1)
         evidence["recoveryLabel"] = label
         if parts:
             parts.append(f"and recovery reads {label.lower()}")
         else:
             parts.append(f"Recovery reads {label.lower()}")
+    elif score is not None:
+        # A score with no label still says something; the number alone is
+        # honest where an empty label would leave a dangling sentence.
+        evidence["recoveryScore"] = round(score, 1)
+        parts.append(
+            f"and recovery is scoring {score:.0f}" if parts
+            else f"Recovery is scoring {score:.0f}"
+        )
 
     if not parts:
         return (
@@ -262,7 +304,7 @@ def generate(uid: int, *, day: date | None = None, force: bool = False) -> dict:
         energy=_energy_from(recovery),
     )
     review = review_mod.review_buckets(tasks, today=day)
-    summary, evidence = _state_summary(recovery, quality, part)
+    summary, evidence = _state_summary(recovery, quality, part, _latest_health(uid))
     insight = _select_insight(uid, snap, recovery, quality)
     warnings = dq.warnings_from(quality)
 

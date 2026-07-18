@@ -449,3 +449,85 @@ def _best(records_list: list[dict]) -> float | None:
         if record["type"] == "heaviest_weight":
             return record["value"]
     return None
+
+
+# --------------------------------------------------------------------------- #
+# Apple Health linkage
+# --------------------------------------------------------------------------- #
+def test_a_session_links_to_the_apple_health_activity_covering_it():
+    """A logged session knows what was lifted but nothing about heart rate; the
+    Apple Health record knows the reverse. Linking gives one session both."""
+    from app.db.models import Workout
+
+    workout_id, block_id = _session_with()
+    sessions.log_set(USER, block_id, weight_kg=70, reps=6)
+    sessions.finish_session(USER, workout_id)
+
+    with session_scope() as s:
+        started = s.get(StrengthWorkout, workout_id).started_at
+        s.add(Workout(
+            user_id=USER, source="hae", source_id="test-link-1",
+            title="Traditional Strength Training", sport_type="other",
+            started_at=started, duration_seconds=2220, average_heart_rate=99.7,
+        ))
+    try:
+        match = sessions.link_health_workout(USER, workout_id)
+        assert match is not None
+        assert match["averageHeartRate"] == pytest.approx(99.7)
+        with session_scope() as s:
+            assert s.get(StrengthWorkout, workout_id).workout_id == match["workoutId"]
+    finally:
+        with session_scope() as s:
+            for row in s.scalars(
+                select(StrengthWorkout).where(StrengthWorkout.user_id == USER)
+            ).all():
+                row.workout_id = None
+            s.flush()
+            for row in s.scalars(
+                select(Workout).where(Workout.source_id == "test-link-1")
+            ).all():
+                s.delete(row)
+
+
+def test_an_ambiguous_match_is_left_unlinked_rather_than_guessed():
+    """A wrong link attaches a run's heart rate to a bench session, and nothing
+    downstream would ever question it."""
+    from app.db.models import Workout
+
+    workout_id, _ = _session_with()
+    with session_scope() as s:
+        started = s.get(StrengthWorkout, workout_id).started_at
+        for i in (1, 2):
+            s.add(Workout(
+                user_id=USER, source="hae", source_id=f"test-ambig-{i}",
+                title="Traditional Strength Training", sport_type="other",
+                started_at=started + timedelta(minutes=i),
+            ))
+    try:
+        assert sessions.link_health_workout(USER, workout_id) is None
+    finally:
+        with session_scope() as s:
+            for row in s.scalars(
+                select(Workout).where(Workout.source_id.like("test-ambig-%"))
+            ).all():
+                s.delete(row)
+
+
+def test_a_nearby_run_is_not_matched_to_a_strength_session():
+    from app.db.models import Workout
+
+    workout_id, _ = _session_with()
+    with session_scope() as s:
+        started = s.get(StrengthWorkout, workout_id).started_at
+        s.add(Workout(
+            user_id=USER, source="hae", source_id="test-run-1",
+            title="Outdoor Run", sport_type="run", started_at=started,
+        ))
+    try:
+        assert sessions.link_health_workout(USER, workout_id) is None
+    finally:
+        with session_scope() as s:
+            for row in s.scalars(
+                select(Workout).where(Workout.source_id == "test-run-1")
+            ).all():
+                s.delete(row)

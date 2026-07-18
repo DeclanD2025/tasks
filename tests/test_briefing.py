@@ -415,3 +415,94 @@ def test_effectiveness_reports_counts_not_rates_on_thin_data():
     result = brief_service.effectiveness(USER, days=30)
     assert result["prioritiesGenerated"] >= 0
     assert "Counts, not rates" in result["note"]
+
+
+# --------------------------------------------------------------------------- #
+# Regressions found on live data
+# --------------------------------------------------------------------------- #
+def test_a_missing_recovery_label_does_not_produce_a_broken_sentence():
+    """Production rendered "Recovery reads ." because RecoverySnapshot carries
+    `label`, not `score_label`, and a getattr miss left a dangling clause. An
+    empty slot must drop its whole clause, not render as punctuation."""
+
+    class _Snapshot:
+        score = 62.0
+        label = ""
+
+    fresh = {"health": dq._judge("health", "Health", date.today(), 5)}
+    summary, _ = brief_service._state_summary(_Snapshot(), fresh, "evening")
+    assert "reads ." not in summary
+    assert "  " not in summary
+    assert summary.strip().endswith(".")
+
+
+def test_a_present_recovery_label_is_used():
+    class _Snapshot:
+        score = 62.0
+        label = "Steady"
+
+    fresh = {"health": dq._judge("health", "Health", date.today(), 5)}
+    summary, evidence = brief_service._state_summary(
+        _Snapshot(), fresh, "evening", {"sleepHours": 8.2}
+    )
+    assert "8.2 hours" in summary
+    assert "steady" in summary
+    assert evidence["sleepHours"] == 8.2
+
+
+def test_sub_projects_merge_into_their_parent_for_the_reframing():
+    """Production has both "Steelmen Dispatch" and "Steelmen Dispatch Issue 4".
+    Counted separately neither cleared the threshold, so the page called a
+    backlog that is 98% one publication "spread across several areas"."""
+    tasks = (
+        [_task(id=i, area="Steelmen Dispatch Issue 4 / Marketing",
+               due_date=TODAY - timedelta(days=5)) for i in range(1, 21)]
+        + [_task(id=100 + i, area="Steelmen Dispatch",
+                 due_date=TODAY - timedelta(days=5)) for i in range(1, 16)]
+        + [_task(id=200, area="Personal", due_date=TODAY - timedelta(days=5))]
+    )
+    result = review_mod.review_buckets(tasks, today=TODAY)
+    assert "Steelmen Dispatch" in result["headline"]
+    assert "one project's schedule slipped" in result["headline"]
+
+
+def test_unrelated_projects_are_not_merged():
+    """The prefix rule must not fold genuinely separate areas together.
+
+    "Homework" starts with "Home" as a string but is a different area, so the
+    merge requires a word boundary after the parent name.
+    """
+    merged = review_mod._merge_related(Counter({"Home": 5, "Homework": 3}))
+    assert merged["Home"] == 5
+    assert merged["Homework"] == 3
+
+
+def test_sub_projects_merge_on_a_word_boundary():
+    for parent, child in [
+        ("Steelmen Dispatch", "Steelmen Dispatch Issue 4"),
+        ("Work", "Work / Admin"),
+        ("Health", "Health: training"),
+    ]:
+        assert review_mod._is_sub_project(child, parent), f"{child} ⊂ {parent}"
+    assert not review_mod._is_sub_project("Homework", "Home")
+    assert not review_mod._is_sub_project("Planning", "Plan")
+
+
+def test_task_review_fields_reach_the_scorer():
+    """services.get_tasks() built a fixed dict that omitted the review columns,
+    so pinning and deferring silently did nothing."""
+    from app.services import get_tasks
+
+    with session_scope() as s:
+        s.add(Task(user_id=USER, title="Field check", area="Personal",
+                   status="open", pinned_for=date.today(), next_action="Do it"))
+    try:
+        rows = [t for t in get_tasks(USER, include_done=False) if t["title"] == "Field check"]
+        assert rows, "task should be readable"
+        assert rows[0]["pinned_for"] == date.today()
+        assert rows[0]["next_action"] == "Do it"
+        assert "deferral_count" in rows[0]
+    finally:
+        with session_scope() as s:
+            for row in s.scalars(select(Task).where(Task.title == "Field check")).all():
+                s.delete(row)

@@ -38,6 +38,7 @@ from app.db.models import (
     StrengthWorkout,
     StrengthWorkoutExercise,
     StrengthWorkoutTemplate,
+    Workout,
     utcnow,
 )
 from app.domains.strength import calc, catalog, muscles, records
@@ -504,6 +505,55 @@ def finish_session(
     summary["status"] = status
     summary["newRecords"] = new_records
     return summary
+
+
+def link_health_workout(
+    user_id: int, workout_id: int, *, tolerance_minutes: int = 30
+) -> dict | None:
+    """Match a logged session to the Apple Health activity covering it.
+
+    A logged session knows what was lifted but nothing about heart rate or
+    energy cost; the Apple Health record knows those and nothing about
+    exercises. Linking them gives one session both.
+
+    Matched on start time within a tolerance, and only when exactly one
+    candidate fits — an ambiguous match is left unlinked rather than guessed,
+    because a wrong link attaches someone's run HR to their bench session and
+    nothing downstream would ever question it.
+    """
+    from datetime import timedelta
+
+    with session_scope() as s:
+        workout = _owned_workout(s, user_id, workout_id, require_active=False)
+        started = _naive(workout.started_at)
+        window = timedelta(minutes=tolerance_minutes)
+
+        candidates = s.scalars(
+            select(Workout).where(
+                Workout.user_id == user_id,
+                Workout.started_at >= started - window,
+                Workout.started_at <= started + window,
+            )
+        ).all()
+        # Strength-shaped activities only: an overlapping run is a different
+        # session that happened nearby, not this one.
+        candidates = [
+            c for c in candidates
+            if c.sport_type in {"other", "strength"} or "strength" in (c.title or "").lower()
+        ]
+        if len(candidates) != 1:
+            return None
+
+        match = candidates[0]
+        workout.workout_id = match.id
+        return {
+            "workoutId": match.id,
+            "title": match.title,
+            "startedAt": match.started_at.isoformat(),
+            "durationMinutes": round((match.duration_seconds or 0) / 60),
+            "averageHeartRate": match.average_heart_rate,
+            "maxHeartRate": match.max_heart_rate,
+        }
 
 
 def abandon_session(user_id: int, workout_id: int, *, reason: str = "") -> None:

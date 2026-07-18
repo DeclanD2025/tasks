@@ -69,7 +69,7 @@ def review_buckets(tasks: list[dict], *, today: date | None = None) -> dict:
         if due is None:
             needs_date.append(task)
 
-    projects = Counter(_project_of(t.get("area")) for t in overdue)
+    projects = _merge_related(Counter(_project_of(t.get("area")) for t in overdue))
     dominant = projects.most_common(1)[0] if projects else None
 
     return {
@@ -91,6 +91,42 @@ def review_buckets(tasks: list[dict], *, today: date | None = None) -> dict:
         "headline": _overdue_framing(overdue, dominant),
         "dominantProject": dominant[0] if dominant else None,
     }
+
+
+def _merge_related(projects: Counter) -> Counter:
+    """Fold a project into its parent when one name prefixes another.
+
+    Production has both "Steelmen Dispatch" (37 items) and "Steelmen Dispatch
+    Issue 4" (53). Counted separately, neither clears the threshold to be named
+    — so the page said "spread across several areas" about a backlog that is 98%
+    one publication. Merging on prefix is a narrow rule and a safe one: an area
+    that starts with another area's full name is a sub-area of it.
+    """
+    if len(projects) < 2:
+        return projects
+    merged: Counter = Counter()
+    names = sorted(projects, key=len)  # shortest first — parents before children
+    for name in projects:
+        parent = next(
+            (p for p in names if p != name and _is_sub_project(name, p)),
+            name,
+        )
+        merged[parent] += projects[name]
+    return merged
+
+
+def _is_sub_project(name: str, parent: str) -> bool:
+    """Is ``name`` a sub-project of ``parent``?
+
+    A bare `startswith` would fold "Homework" into "Home", which is a different
+    area entirely. Requiring a word boundary after the parent name keeps the
+    rule useful ("Steelmen Dispatch Issue 4" → "Steelmen Dispatch") without it
+    merging things that merely share an opening substring.
+    """
+    if not name.startswith(parent):
+        return False
+    remainder = name[len(parent):]
+    return remainder[:1] in {" ", "/", ":", "-", ""}
 
 
 def _bucket(key: str, label: str, tasks: list[dict], note: str) -> dict:
